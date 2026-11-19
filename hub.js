@@ -454,6 +454,11 @@
 
   // 모든 카드를 가장 큰 카드 높이에 맞춘다(글은 자르지 않고, 남는 자리는 상태 줄 위로).
   function equalize() {
+    // 칸 제목은 한 줄로: 설명까지 다 안 들어가면 설명을 빼고 이름만 둔다(옆 칸 카드와 높이가 어긋나지 않게).
+    document.querySelectorAll('.shelf h2').forEach((h) => {
+      h.classList.remove('short');
+      if (h.scrollWidth > h.clientWidth + 1) h.classList.add('short');
+    });
     const cards = [...document.querySelectorAll('.card')];
     cards.forEach((c) => { c.style.minHeight = ''; });
     const max = Math.max(0, ...cards.map((c) => c.getBoundingClientRect().height));
@@ -475,7 +480,7 @@
       sec.id = 'g-' + (g.id || 'etc');
       sec.style.setProperty('--n', ps.length);
       sec.classList.toggle('n1', ps.length === 1);
-      sec.innerHTML = g.name ? `<h2><b>${esc(g.name)}.</b> ${esc(g.tagline || '')}</h2>` : '';
+      sec.innerHTML = g.name ? `<h2><b>${esc(g.name)}.</b>${g.tagline ? `<span class="tg"> ${esc(g.tagline)}</span>` : ''}</h2>` : '';
       const grid = document.createElement('div');
       grid.className = 'grid';
       ps.forEach((p) => { grid.appendChild(cardShell(p)); used.add(p.id); });

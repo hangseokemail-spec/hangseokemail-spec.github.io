@@ -71,9 +71,11 @@ button{font:inherit}
 /* 선반 */
 .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
 .shelves{display:flex;flex-wrap:wrap;column-gap:44px}
-.shelf{--cw:236px;--gap:22px;flex:0 1 calc(var(--n) * (var(--cw) + var(--gap)) - var(--gap));max-width:100%;padding-top:60px}
+.shelf{--cw:236px;--gap:22px;flex:0 1 calc(var(--n) * (var(--cw) + var(--gap)) - var(--gap));min-width:0;max-width:100%;padding-top:60px}
 .shelf h2{margin:0 0 22px;font-size:clamp(22px,2.6vw,28px);font-weight:600;line-height:1.25;letter-spacing:-.025em;color:var(--soft);text-wrap:balance}
 .shelf h2 b{color:var(--ink);font-weight:700}
+.shelf h2{white-space:nowrap;overflow:hidden}
+.shelf h2.short .tg{display:none}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,var(--cw));gap:30px var(--gap)}
 
 /* 카드 — 기본은 세로(표지 위, 글 아래) */
@@ -105,7 +107,7 @@ button{font:inherit}
 /* 글은 양쪽 정렬: 한글은 글자 사이에서 줄을 바꿔 오른쪽 끝을 가지런히 맞춘다 */
 .hl,.sm{text-align:justify;overflow-wrap:break-word;line-break:strict}
 .sm{text-justify:inter-character;word-break:normal}
-.hl{word-break:keep-all} /* 제목은 낱말을 쪼개지 않는다 */
+.hl{word-break:keep-all;text-align:left;text-wrap:balance} /* 제목은 낱말을 쪼개지 않고, 양쪽 정렬로 낱말 사이가 벌어지지 않게 줄 길이를 고르게 맞춘다 */
 .hl{margin:10px 0 0;font-size:16px;font-weight:700;line-height:1.38;letter-spacing:-.02em}
 .hl.dup{display:none}
 .sm{margin:7px 0 0;font-size:14px;line-height:1.5;color:#424245}
