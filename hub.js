@@ -77,8 +77,15 @@
     }
     return null;
   };
+  const nextQuarterEnd = (period) => {
+    const [y, m] = period.split('-').map(Number);
+    const nm = m + 3, ny = y + (nm > 12 ? 1 : 0), mm = ((nm - 1) % 12) + 1;
+    const last = new Date(Date.UTC(ny, mm, 0)).getUTCDate();
+    return `${ny}-${String(mm).padStart(2, '0')}-${last}`;
+  };
   const cadText = (p) => {
     const s = p.schedule;
+    if (s && s.every === 'quarter') return '분기마다';
     if (!s) return p.group === 'always' ? '언제든' : '';
     const d = s.days.slice().sort((a, b) => a - b);
     if (d.length === 7) return `매일 ${s.time}`;
@@ -150,6 +157,29 @@
         summary: (c && c.summary) || '',
         publishedAt: g ? at(g[1], g[2]) : null,
         wind: { score, zone, zones: w.zones || [], spark: w.w.slice(Math.max(0, i - 59), i + 1).map(Number) },
+      };
+    },
+
+    // 구루 13F: 가장 최근 공시 분기와 그 분기에 많이 산·판 종목(ETF 제외, 사이트와 같은 순위).
+    async guru13f(s) {
+      const [st, ko] = await Promise.all([getJSON(s.stats), getJSON(s.names).catch(() => [])]);
+      const info = st.find((x) => x.sec === 'info') || {};
+      const q = st.filter((x) => x.sec === 'quarter').pop() || {};
+      const period = info.latest || q.p;
+      if (!period) throw new Error('분기 정보 없음');
+      const KO = {}; (Array.isArray(ko) ? ko : []).forEach((x) => { if (x && x.k) KO[x.k] = x.ko; });
+      const row = (r) => ({ t: r[0], n: KO[r[0]] || '', v: +r[3], c: +r[4] });
+      const buys = (q.buy10 || []).slice(0, 4).map(row), sells = (q.sell10 || []).slice(0, 3).map(row);
+      const [y, mo] = period.split('-').map(Number), qn = Math.ceil(mo / 3);
+      const pub = Date.parse(period + 'T00:00:00+09:00') + (s.lagDays || 45) * DAY; // 13F 공시 기한
+      const px = info.price_asof ? info.price_asof.split('-').map(Number) : null;
+      const nm = (x) => (x ? x.n || x.t : '');
+      return {
+        key: period, period, date: dayKey(pub), publishedAt: pub,
+        label: `${y}년 ${qn}분기`,
+        dateText: px ? `주가 ${px[1]}/${px[2]} 기준` : '',
+        title: buys[0] && sells[0] ? `가장 많이 산 ${nm(buys[0])}, 가장 많이 판 ${nm(sells[0])}` : '',
+        guru: { buys, sells, n: info.gurus_n || 0, qlabel: `${y}년 ${qn}분기` },
       };
     },
 
@@ -277,7 +307,36 @@
     </svg>`;
   };
 
-  const coverShowsTitle = (p) => ['overlay', 'paper', 'type', 'tower'].includes(p.cover && p.cover.style);
+  // 구루 13F 표지: 이번 분기에 많이 산 종목(빨강)과 많이 판 종목(파랑)을 막대로.
+  const guruSVG = (G, c) => {
+    const all = [...G.buys, ...G.sells].map((r) => Math.abs(r.v));
+    const max = Math.max(1, ...all);
+    const eok = (v) => { const a = Math.abs(v) / 1e8; return (v < 0 ? '−' : '+') + (a >= 10 ? Math.round(a) : a.toFixed(1)) + '억'; };
+    const rows = (list, y0, col) => list.map((r, i) => {
+      const y = y0 + i * 30, w = Math.max(6, (Math.abs(r.v) / max) * 112);
+      return `<text x="22" y="${y + 12}" fill="#0b0b0b" font-size="13" font-weight="800">${esc(r.t)}</text>
+        <text x="22" y="${y + 25}" fill="#898781" font-size="9.5">${esc(r.n)}</text>
+        <rect x="112" y="${y + 4}" width="${w.toFixed(1)}" height="13" rx="3" fill="${col}"/>
+        <text x="${(116 + w).toFixed(1)}" y="${y + 14.5}" fill="${col}" font-size="11" font-weight="800">${eok(r.v)}</text>
+        <text x="280" y="${y + 14.5}" fill="#898781" font-size="10.5" text-anchor="end">${r.c}곳</text>`;
+    }).join('');
+    const yb = 120, ys = yb + G.buys.length * 30 + 30;
+    return `<svg viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(G.qlabel)} 구루 13F">
+      <rect width="300" height="400" fill="#fbfaf6"/>
+      <rect x="0" y="0" width="300" height="6" fill="#0b0b0b"/>
+      <text x="22" y="36" fill="#c42f2e" font-size="11" font-weight="800" letter-spacing="1.5">${esc(c.kicker || '13F TRACKER')}</text>
+      <text x="22" y="66" fill="#0b0b0b" font-size="27" font-weight="900" letter-spacing="-1">${esc(c.mast || '')}</text>
+      <text x="22" y="88" fill="#52514e" font-size="12" font-weight="600">${esc(G.qlabel)} · 구루 ${G.n}곳</text>
+      <line x1="22" y1="100" x2="278" y2="100" stroke="#0b0b0b" stroke-width="1.2"/>
+      <text x="22" y="${yb - 4}" fill="#c42f2e" font-size="11" font-weight="800">▲ 많이 산 종목</text>
+      ${rows(G.buys, yb + 2, '#e34948')}
+      <text x="22" y="${ys - 4}" fill="#2a78d6" font-size="11" font-weight="800">▼ 많이 판 종목</text>
+      ${rows(G.sells, ys + 2, '#2a78d6')}
+      <text x="22" y="388" fill="#898781" font-size="9.5">금액 = 구루들이 사고판 합계(달러) · N곳 = 사고판 구루 수 · ETF 제외</text>
+    </svg>`;
+  };
+
+  const coverShowsTitle = (p) => ['overlay', 'paper', 'type', 'tower', 'guru'].includes(p.cover && p.cover.style);
 
   function buildCover(p, it) {
     const st = (p.cover && p.cover.style) || 'plain';
@@ -295,7 +354,10 @@
       return im;
     };
 
-    if (st === 'tower') {
+    if (st === 'guru' && it.guru) {
+      el.className = 'cv cv-wind';
+      el.innerHTML = guruSVG(it.guru, c);
+    } else if (st === 'tower') {
       el.className = 'cv cv-wind';
       el.innerHTML = towerSVG(c);
     } else if (st === 'type') {
@@ -346,12 +408,20 @@
   const isFresh = (p, it, now) => {
     const t = pubTime(p, it);
     if (!t || t > now) return false;
-    return p.group === 'daily' ? dayKey(t) === dayKey(now) : now - t < 3 * DAY;
+    if (p.group === 'daily') return dayKey(t) === dayKey(now);
+    return now - t < (p.schedule && p.schedule.every === 'quarter' ? 14 : 3) * DAY;
   };
 
   function statusOf(p, it, now) {
     if (it.empty) return { cls: 'idle', text: p.emptyText || '첫 호를 기다리는 중' };
     if (!p.schedule) return { cls: p.group === 'always' ? 'idle' : 'ok', text: fill(p.statusText, it) || '언제든 열려 있어요' };
+    if (p.schedule.every === 'quarter' && it.period) {
+      const nq = nextQuarterEnd(it.period), due = Date.parse(nq + 'T00:00:00+09:00') + (p.schedule.lagDays || 45) * DAY;
+      const [ny, nm] = nq.split('-').map(Number);
+      if (now > due + 10 * DAY) return { cls: 'late', text: `예정보다 늦어지고 있어요 · ${ny}년 ${Math.ceil(nm / 3)}분기 공시` };
+      const dk = dayKey(due), yr = dk.slice(0, 4) !== dayKey(now).slice(0, 4) ? dk.slice(0, 4) + '년 ' : '';
+      return { cls: 'ok', text: `다음 공시 ${yr}${fmtDay(dk)} 무렵` };
+    }
     const last = occ(p.schedule, now, -1), next = occ(p.schedule, now, +1);
     const t = pubTime(p, it);
     const pubKey = t ? dayKey(t) : it.date;

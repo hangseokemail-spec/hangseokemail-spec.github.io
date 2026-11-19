@@ -16,6 +16,11 @@
       "tagline": "한 주를 담아 금요일 저녁에."
     },
     {
+      "id": "quarterly",
+      "name": "분기마다",
+      "tagline": "구루들의 13F 공시가 나오면."
+    },
+    {
       "id": "irregular",
       "name": "궁금할 때마다",
       "tagline": "질문이 생기면 나와요."
@@ -156,6 +161,32 @@
       },
       "read": "https://hangseokemail-spec.github.io/nova/editions/{file} 의 cover(headline·lead)와 그 머리기사 articles.*.body 전체 — 초등학생 독자에게 남길 한 가지",
       "summaryTone": "해요체(초등학생 독자용)"
+    },
+    {
+      "id": "guru13f",
+      "name": "구루들의 움직임",
+      "kind": "13F 트래커",
+      "desc": "투자 구루 18곳이 분기마다 공시하는 13F로 보는 매매",
+      "group": "quarterly",
+      "url": "/guru13f/",
+      "accent": "#e34948",
+      "schedule": {
+        "every": "quarter",
+        "lagDays": 45
+      },
+      "source": {
+        "type": "guru13f",
+        "stats": "/guru13f/data/stats.json",
+        "names": "/guru13f/data/names_ko.json",
+        "lagDays": 45
+      },
+      "cover": {
+        "style": "guru",
+        "mast": "구루들의 움직임",
+        "kicker": "13F TRACKER"
+      },
+      "read": "https://hangseokemail-spec.github.io/guru13f/ 첫 화면(한눈에 보기)과 https://hangseokemail-spec.github.io/guru13f/data/stats.json 의 이 분기 quarter(buy10·sell10·newbuys·soldouts·consensus)와 signals — 이번 분기 구루들 돈이 어디서 어디로 움직였는지",
+      "summaryTone": "한다체"
     },
     {
       "id": "question",

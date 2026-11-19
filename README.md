@@ -36,7 +36,7 @@ PC·태블릿 가로는 표지를 크게 세운 카드, 태블릿 세로·휴대
 
 ## 새 프로그램 추가하기
 
-`projects.json`의 `projects`에 한 덩어리를 더합니다. `group`은 `daily`·`weekly`·`irregular`·`always` 중 하나(새 칸이 필요하면 `groups`에 추가).
+`projects.json`의 `projects`에 한 덩어리를 더합니다. `group`은 `daily`·`weekly`·`quarterly`·`irregular`·`always` 중 하나(새 칸이 필요하면 `groups`에 추가).
 
 ### 1) 목록 JSON이 이미 있는 경우 — `index`
 
@@ -62,7 +62,8 @@ PC·태블릿 가로는 표지를 크게 세운 카드, 태블릿 세로·휴대
 }
 ```
 
-- `schedule.days`: 0=일 … 6=토, `time`: 한국 시각. 다음 호 안내와 "예정보다 늦어지고 있어요" 표시에 씁니다. 비정기면 빼고 `statusText`를 씁니다.
+- `schedule`: `{"days":[…],"time":"HH:MM"}`(0=일 … 6=토, 한국 시각) 또는 분기마다 `{"every":"quarter","lagDays":45}`(분기 말 + 45일 = 13F 공시 기한).
+  - `schedule.days`: 0=일 … 6=토, `time`: 한국 시각. 다음 호 안내와 "예정보다 늦어지고 있어요" 표시에 씁니다. 비정기면 빼고 `statusText`를 씁니다.
 - `list`: 목록 배열이 있는 자리(배열이 파일 맨 위면 `""`). 각 항목에 `date`(YYYY-MM-DD)가 있어야 합니다.
 - `label`·`title`·`cover`·`link`: `{필드}` 자리에 그 호의 값이 들어갑니다. `{no|pad2}`는 두 자리(01)로 채웁니다.
 - `summary`: 카드에 넣을 핵심 한 문장. 후보를 여러 개 적으면 처음으로 값이 있는 것을 씁니다(예: `["{summary}", "{lead}"]`). `summaryAfter`는 그 글자 뒤만, `sentences`는 몇 문장을 쓸지(기본 1 = 첫 문장, -1 = 마지막 문장, 0 = 전부), `summaryHtml`은 호별 HTML에서 `selector`로 뽑습니다.
@@ -70,7 +71,7 @@ PC·태블릿 가로는 표지를 크게 세운 카드, 태블릿 세로·휴대
   요약은 결론을 맺거나("…입니다.") 질문으로 끝나는("…일까?") 완결된 한 문장으로 씁니다. 화면에서 자르지 않으므로 말줄임표로 끝나지 않게 합니다.
 - `publishAt`: 미리 올려 두고 정해진 시각에 공개하는 경우 그 필드 이름.
 - `detail`: 표지 정보가 호별 파일 안에 있을 때 그 파일 주소. 그 안의 값은 `{d.필드}`로 씁니다.
-- `cover.style`: `plain`(표지 그림 그대로) · `overlay`(그림 위에 `mast` 제호와 제목) · `paper`(종이 신문, SVG 그림) · `type`(글자만) · `wind`(풍향계 전용) · `tower`(구구탑 전용: 탑 그림).
+- `cover.style`: `plain`(표지 그림 그대로) · `overlay`(그림 위에 `mast` 제호와 제목) · `paper`(종이 신문, SVG 그림) · `type`(글자만) · `wind`(풍향계 전용) · `tower`(구구탑 전용: 탑 그림) · `guru`(구루 13F 전용: 많이 산·판 종목 막대).
 - 구구탑에 새 층이 열리면 `projects.json`의 구구탑 `cover.reached`와 `floors`, `source.summary`를 고칩니다.
 
 ### 2) 새로 만드는 프로그램 — `hub.json` 하나만 두기

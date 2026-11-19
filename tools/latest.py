@@ -43,6 +43,9 @@ def latest(p):
         while i >= 0 and vals[i] is None: i -= 1
         d = w['dates'][i + (len(w['dates']) - len(vals))]
         return {'key': d, 'date': d, 'label': f'미국 {d} 마감', 'entry': {'date': d}}
+    if t == 'guru13f':
+        st = get(s['stats']); info = next((x for x in st if x.get('sec') == 'info'), {})
+        per = info.get('latest'); return {'key': per, 'date': per, 'label': f'{per} 분기', 'entry': {'date': per}}
     if t == 'hub':
         d = get(s['feed']); return {'key': d.get('key') or d.get('date'), 'date': d.get('date'), 'label': d.get('label'), 'entry': d}
     return None  # static: 요약은 projects.json에 고정
