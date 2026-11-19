@@ -181,6 +181,7 @@ body.lock { overflow: hidden; }
 .rmain.wide .rtoc { display: none; }
 .rmain.wide .prose { max-width: 960px; margin: 0 auto; }
 .rback { text-align: center; margin: 32px 0 0; }
+.toc-toggle { white-space: nowrap; flex-shrink: 0; }
 @media (max-width: 860px) { .toc-toggle { display: none; } }
 @media (max-width: 600px) {
   .ranswer { padding: 16px 14px; border-left-width: 3px; }
