@@ -83,6 +83,8 @@ button { font: inherit; cursor: pointer; }
 .pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 12px; background: var(--accent-soft); color: var(--accent-ink); }
 .pill.arch { background: var(--line); color: var(--ink-2); }
 .qtitle { margin: 6px 0 8px; font-size: 18px; line-height: 1.45; font-weight: 700; }
+.qask { margin: 0 0 10px; padding-left: 10px; border-left: 2px solid var(--line); color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+.issue-line { font-family: var(--font-read); font-style: italic; letter-spacing: .5px; }
 .qanswer { margin: 0; font-family: var(--font-read); font-size: 15.5px; line-height: 1.8; color: var(--ink); }
 .qmore { display: inline-block; margin-top: 10px; font-size: 14px; color: var(--accent); font-weight: 600; }
 .empty-cat { color: var(--ink-3); font-size: 14px; margin: 0; padding: 4px 0 8px; }

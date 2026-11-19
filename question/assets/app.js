@@ -59,8 +59,8 @@
   function chrome() {
     var d = app.data, qs = d.questions;
     var latest = qs[0];
-    $('#dateLabel').textContent = latest ? '최근 질문 Q' + pad(latest.no) + ' · ' + dotDate(latest.date) : '아직 질문이 없습니다';
-    $('#issueLine').textContent = '하나의 질문을 여러 학문의 눈으로 · 지금까지 ' + qs.length + '개의 질문';
+    $('#dateLabel').textContent = latest ? '질문 ' + qs.length + '편 · 최근 ' + dotDate(latest.date) : '첫 질문을 기다리는 중';
+    $('#issueLine').textContent = '하나의 물음에 세상의 창을 모두 열다';
   }
 
   function tabs(active) {
@@ -129,6 +129,7 @@
       '<div class="qmeta"><span class="qno">Q' + pad(q.no) + '</span><span>' + esc(dotDate(q.date)) + '</span><span class="pill">' + esc(c.name) + '</span>' +
       (isRecent(q) ? '' : '<span class="pill arch">지난 질문</span>') + (q.version ? '<span>' + esc(q.version) + '</span>' : '') + '</div>' +
       '<p class="qtitle">' + esc(q.title) + '</p>' +
+      (q.question ? '<p class="qask">' + esc(String(q.question).split('\n')[0]) + '</p>' : '') +
       '<p class="qanswer">' + esc(q.answer) + '</p>' +
       '<span class="qmore">보고서 전체 보기 →</span></a>';
   }
