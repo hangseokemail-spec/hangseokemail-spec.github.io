@@ -120,6 +120,7 @@ button { font: inherit; cursor: pointer; }
 .tbl { overflow-x: auto; margin: 12px 0 18px; -webkit-overflow-scrolling: touch; }
 .prose table { border-collapse: collapse; width: 100%; font-family: var(--font-ui); font-size: 14.5px; line-height: 1.55; }
 .prose th, .prose td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+.prose td:first-child, .prose th:first-child { min-width: 4.5em; }
 .prose th { border-bottom: 2px solid var(--ink); font-weight: 700; white-space: nowrap; }
 .chart { margin: 18px 0 22px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 .chart .cv { position: relative; height: 300px; }

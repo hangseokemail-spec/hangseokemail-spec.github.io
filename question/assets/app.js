@@ -175,13 +175,24 @@
       '<p class="rfoot">이 보고서는 근거 등급(A 공식 통계·법령·동료심사 논문, B 신뢰할 만한 언론·연구기관, C 추정·사설 기관 단독 집계)을 출처마다 표시합니다. 시나리오 수치는 확률이 아니라 편집진 판단 가중치입니다.</p>';
   }
 
+  // 한국어 본문에서 '**[확정]**은'처럼 굵은 글씨 바로 뒤에 조사가 붙으면 마크다운이 굵게 처리하지 못한다.
+  // 코드 블록 밖의 **...**를 <strong>으로 미리 바꿔 둔다.
+  function fixBold(md) {
+    return String(md).split(/(```[\s\S]*?```)/).map(function (part, i) {
+      if (i % 2 === 1) return part;
+      return part.replace(/\*\*(?=\S)([^*\n]+?)\*\*/g, function (m, inner) {
+        return /\s$/.test(inner) ? m : '<strong>' + inner + '</strong>';
+      });
+    }).join('');
+  }
+
   function fillReport(q, root) {
     var token = (root.dataset.token = String(Math.random()));
     fetchReport(q).then(function (md) {
       if (root.dataset.token !== token) return;
       var art = $('.prose', root);
       if (!art) return;
-      var html = window.marked ? window.marked.parse(md, { gfm: true }) : '<pre>' + esc(md) + '</pre>';
+      var html = window.marked ? window.marked.parse(fixBold(md), { gfm: true }) : '<pre>' + esc(md) + '</pre>';
       art.innerHTML = window.DOMPurify ? window.DOMPurify.sanitize(html) : esc(md);
       art.querySelectorAll('table').forEach(function (t) {
         var w = document.createElement('div'); w.className = 'tbl';
