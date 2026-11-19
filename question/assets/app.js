@@ -113,7 +113,7 @@
       tabs(q.id);
       $('#content').dataset.view = 't:' + q.id;
       $('#content').innerHTML = reportShell(q, 'tab');
-      $('#content').dataset.qid = q.id; // 본문은 '왜 그런지 따라가기'를 누를 때 불러온다(숨긴 상태에서는 그래프 크기를 잴 수 없음)
+      $('#content').dataset.qid = q.id; // 본문은 '자세히 보고 싶다면 클릭'를 누를 때 불러온다(숨긴 상태에서는 그래프 크기를 잴 수 없음)
     } else {
       tabs('list');
       $('#content').dataset.view = 'list';
@@ -159,13 +159,12 @@
   }
 
   // ---------- report ----------
-  function readMinutes(q) { return q.minutes ? ' · 읽는 데 약 ' + esc(q.minutes) + '분' : ''; }
   function answerHtml(q) {
     var a = Array.isArray(q.lead) ? q.lead : String(q.answer || '').split(/\n\s*\n/);
     return a.filter(function (x) { return String(x).trim(); }).map(function (x) { return '<p>' + esc(String(x).trim()) + '</p>'; }).join('');
   }
 
-  // 첫 화면: Q. 질문과 답만. 본문은 '왜 그런지 따라가기'를 눌러야 열린다.
+  // 첫 화면: Q. 질문과 답만. 본문은 '자세히 보고 싶다면 클릭'를 눌러야 열린다.
   function reportShell(q, mode) {
     var c = catOf(q.category);
     var ask = String(q.question || q.title || '').split('\n')[0];
@@ -176,7 +175,7 @@
       '<h2 class="rq"' + (mode === 'detail' ? ' id="detailTitle"' : '') + '><span class="qmark">Q.</span> ' + esc(ask) + '</h2>' +
       (more ? '<p class="rq-more">' + esc(more) + '</p>' : '') +
       '<div class="ranswer">' + answerHtml(q) + '</div>' +
-      '<button type="button" class="readmore" data-readmore>왜 그런지 따라가기' + readMinutes(q) + ' <span aria-hidden="true">↓</span></button>' +
+      '<button type="button" class="readmore" data-readmore>자세히 보고 싶다면 클릭 <span aria-hidden="true">↓</span></button>' +
       '</section>' +
       '<section class="rmain" hidden>' +
       '<div class="rmain-head"><h2 class="rtitle">' + esc(q.title) + '</h2>' +
