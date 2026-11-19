@@ -120,7 +120,7 @@
           "url": "/bios/{file}",
           "selector": ".cover-main p"
         },
-        "sentences": 2
+        "sentences": -1
       },
       "cover": {
         "style": "overlay",
@@ -203,7 +203,7 @@
       "id": "gugutop",
       "name": "구구탑",
       "kind": "가족 게임",
-      "desc": "가족이 함께 한 층씩 오르는 탑 모험 게임",
+      "desc": "99층 탑을 함께 오르는 우리 가족 모험 이야기",
       "group": "always",
       "url": "http://3.34.169.45/",
       "accent": "#8a5cf0",
@@ -211,15 +211,34 @@
         "type": "static",
         "label": "입장 암호 필요",
         "title": "우리 가족 99층 탑 모험",
-        "cover": "assets/gugutop-cover.jpg",
-        "icon": "assets/gugutop-icon.png",
-        "summary": "가족이 함께 한 층씩 오르는 탑 모험 게임"
+        "summary": "지금은 3층 「기공 무술 하늘섬」까지 열렸고, 4층 문은 다음 업데이트에서 열려요."
       },
       "statusText": "언제든 들어갈 수 있어요",
       "cover": {
-        "style": "overlay",
-        "mast": "구구탑",
-        "sub": "가족 모험 RPG"
+        "style": "tower",
+        "title": "구구탑",
+        "kicker": "우리 가족 모험 이야기",
+        "total": 99,
+        "reached": 3,
+        "floors": [
+          {
+            "n": 1,
+            "name": "봄날 동네",
+            "color": "#8fdc8a"
+          },
+          {
+            "n": 2,
+            "name": "드래곤 화산 둥지",
+            "short": "화산 둥지",
+            "color": "#ff8a5c"
+          },
+          {
+            "n": 3,
+            "name": "기공 무술 하늘섬",
+            "short": "하늘섬",
+            "color": "#9ad8ff"
+          }
+        ]
       }
     }
   ]

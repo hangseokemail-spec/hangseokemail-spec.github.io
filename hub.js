@@ -31,9 +31,12 @@
   const sentences = (t, n) => {
     t = String(t || '').replace(/\s+/g, ' ').trim();
     if (!n) return t;
-    const re = /[.!?](?=\s|$)/g; let m, c = 0;
-    while ((m = re.exec(t))) if (++c === n) return t.slice(0, m.index + 1);
-    return t;
+    const ends = []; const re = /[.!?](?=\s|$)/g; let m;
+    while ((m = re.exec(t))) ends.push(m.index + 1);
+    if (!ends.length) return t;
+    if (n > 0) return t.slice(0, ends[Math.min(n, ends.length) - 1]);
+    const k = ends.length + n; // 뒤에서 |n|문장
+    return k <= 0 ? t : t.slice(ends[k - 1]).trim();
   };
   async function summaryOf(s, ctx) {
     let t = s.summary ? pick(s.summary, ctx) : '';
@@ -217,7 +220,64 @@
     </svg>`;
   };
 
-  const coverShowsTitle = (p) => ['overlay', 'paper', 'type'].includes(p.cover && p.cover.style);
+  // 구구탑: 99층 탑을 오르는 모험 이야기 표지. 열린 층은 불이 켜지고, 그 위는 구름 속에 잠겨 있다.
+  const towerSVG = (c) => {
+    const total = c.total || 99, reached = Math.max(1, c.reached || 1), F = c.floors || [];
+    const hs = [32, 30, 28, 23, 19, 16, 13, 11, 9];
+    const stars = [[24,22,1.2],[58,46,.9],[92,18,1.1],[214,26,1],[252,52,1.3],[276,18,.8],[40,96,.8],[268,104,1],[18,150,1],[284,160,.9],[70,130,.7],[236,138,.7]];
+    const P = [];
+    let y = 364, w = 140, here = null;
+    hs.forEach((h, i) => {
+      const k = i + 1, top = y - h, x = 150 - w / 2, lit = k <= reached;
+      const f = F.find((o) => o.n === k) || {};
+      const body = lit ? (f.color || '#ffd54a') : '#5d4c9c';
+      P.push(`<rect x="${x}" y="${top}" width="${w}" height="${h - 2}" rx="3" fill="${esc(body)}" stroke="#24174d" stroke-width="2"${lit ? '' : ' opacity=".8"'}/>`);
+      P.push(`<rect x="${x - 4}" y="${top - 3}" width="${w + 8}" height="5" rx="2" fill="${lit ? '#fff1c1' : '#7f70bd'}" stroke="#24174d" stroke-width="1.4"/>`);
+      const nw = Math.max(1, Math.round(w / 30)), ww = Math.max(3, h * 0.3);
+      for (let j = 0; j < nw; j++) {
+        const wx = x + (w / nw) * (j + 0.5) - ww / 2;
+        P.push(`<rect x="${wx.toFixed(1)}" y="${(top + h * 0.28).toFixed(1)}" width="${ww.toFixed(1)}" height="${(ww * 1.25).toFixed(1)}" rx="1.5" fill="${lit ? '#fff8cf' : '#33276a'}"${lit ? ' filter="url(#tg)"' : ''}/>`);
+      }
+      if (k === reached + 1) P.push(`<text x="150" y="${(top + h * 0.78).toFixed(1)}" fill="#e9e2ff" font-size="${Math.round(h * 0.7)}" font-weight="900" text-anchor="middle" opacity=".85">?</text>`);
+      if (k === reached) here = { top, right: x + w, f, k };
+      y = top - 3; w -= k < 3 ? 12 : 13;
+    });
+    const spireBase = y;
+    const flag = here ? `<line x1="${here.right - 6}" y1="${here.top - 2}" x2="${here.right - 6}" y2="${here.top - 24}" stroke="#24174d" stroke-width="2"/>
+      <path d="M${here.right - 6} ${here.top - 24}l16 5-16 5z" fill="#ff5d73" stroke="#24174d" stroke-width="1.2"/>
+      <g transform="translate(${Math.min(here.right + 10, 176)},${here.top - 64})">
+        <path d="M0 0h112a8 8 0 0 1 8 8v22a8 8 0 0 1-8 8H24l-12 10 2-10H8a8 8 0 0 1-8-8V8a8 8 0 0 1 8-8z" fill="#fff" stroke="#24174d" stroke-width="1.6"/>
+        <text x="10" y="16" fill="#ff5d73" font-size="10.5" font-weight="800">지금 여기!</text>
+        <text x="10" y="31" fill="#24174d" font-size="10.5" font-weight="700">${esc(here.k + '층 ' + (here.f.short || here.f.name || ''))}</text>
+      </g>` : '';
+    return `<svg viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(c.title || '')} ${total}층 중 ${reached}층까지">
+      <defs>
+        <linearGradient id="tsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#170f3d"/><stop offset=".45" stop-color="#4a2fa0"/><stop offset=".78" stop-color="#b65fd2"/><stop offset="1" stop-color="#ffa3c2"/></linearGradient>
+        <linearGradient id="tgold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6c4"/><stop offset="1" stop-color="#ffc23d"/></linearGradient>
+        <radialGradient id="thalo"><stop offset="0" stop-color="#fff3b0" stop-opacity=".9"/><stop offset="1" stop-color="#fff3b0" stop-opacity="0"/></radialGradient>
+        <filter id="tg" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="1.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <rect width="300" height="400" fill="url(#tsky)"/>
+      ${stars.map(([x, yy, r]) => `<circle cx="${x}" cy="${yy}" r="${r}" fill="#fff" opacity=".85"/>`).join('')}
+      <path d="M252 70a16 16 0 1 0 12 26a13 13 0 1 1-12-26z" fill="#fff4c9" opacity=".9"/>
+      <text x="150" y="36" fill="#ffe7a3" font-size="11.5" font-weight="700" text-anchor="middle" letter-spacing="2">${esc(c.kicker || '')}</text>
+      <text x="150" y="84" fill="url(#tgold)" stroke="#2a1a5e" stroke-width="6" paint-order="stroke" stroke-linejoin="round" font-size="50" font-weight="900" text-anchor="middle" letter-spacing="-1">${esc(c.title || '')}</text>
+      <circle cx="150" cy="${spireBase - 40}" r="26" fill="url(#thalo)"/>
+      <path d="M144 ${spireBase} L150 ${spireBase - 30} L156 ${spireBase} Z" fill="#7f70bd" stroke="#24174d" stroke-width="1.4"/>
+      <path d="M150 ${spireBase - 52}l4.4 9 9.9 1.4-7.2 7 1.7 9.8-8.8-4.6-8.8 4.6 1.7-9.8-7.2-7 9.9-1.4z" fill="#ffd84a" stroke="#24174d" stroke-width="1.5" filter="url(#tg)"/>
+      <text x="150" y="${spireBase - 37}" fill="#24174d" font-size="7.5" font-weight="900" text-anchor="middle">${total}</text>
+      ${P.join('')}
+      <g fill="#fff" opacity=".55"><ellipse cx="96" cy="${spireBase + 54}" rx="46" ry="9"/><ellipse cx="206" cy="${spireBase + 62}" rx="52" ry="10"/><ellipse cx="150" cy="${spireBase + 70}" rx="40" ry="7"/></g>
+      ${flag}
+      <g fill="#fff"><ellipse cx="40" cy="372" rx="58" ry="20"/><ellipse cx="128" cy="380" rx="64" ry="20"/><ellipse cx="224" cy="374" rx="70" ry="22"/><ellipse cx="292" cy="382" rx="40" ry="18"/><rect x="0" y="380" width="300" height="20"/></g>
+      <g transform="translate(150 380)">
+        <path d="M-104 -11h208l-8 11 8 11h-208l8-11z" fill="#3a2477" stroke="#ffd84a" stroke-width="1.5"/>
+        <text y="4.5" fill="#fff" font-size="12" font-weight="800" text-anchor="middle">${total}층 중 ${reached}층까지 열렸어요</text>
+      </g>
+    </svg>`;
+  };
+
+  const coverShowsTitle = (p) => ['overlay', 'paper', 'type', 'tower'].includes(p.cover && p.cover.style);
 
   function buildCover(p, it) {
     const st = (p.cover && p.cover.style) || 'plain';
@@ -235,7 +295,10 @@
       return im;
     };
 
-    if (st === 'type') {
+    if (st === 'tower') {
+      el.className = 'cv cv-wind';
+      el.innerHTML = towerSVG(c);
+    } else if (st === 'type') {
       el.className = 'cv cv-type';
       el.innerHTML = `<div class="ty-mast">${esc(c.mast || p.name)}</div><div class="ty-q" aria-hidden="true">?</div>
         <div class="ty-body"><div class="ty-no">${esc(it.empty ? 'Q00' : it.label || '')}</div>
