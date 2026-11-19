@@ -506,6 +506,10 @@
     $('#eyebrow').textContent = `${m}월 ${d}일 ${WD[wdOf(k)]}요일 · ${greet(now)}${cfg.owner ? ', ' + cfg.owner : ''}`;
     if (cfg.title) { $('#brand').textContent = cfg.title; document.title = cfg.title; }
     if (cfg.headline) $('#headline').textContent = cfg.headline;
+    if (cfg.credit) {
+      const m = String(cfg.credit).match(/^(.*\bby)\s+(.+)$/i);
+      $('#credit').innerHTML = m ? `<span>${esc(m[1])}</span> <em>${esc(m[2])}</em>` : `<em>${esc(cfg.credit)}</em>`;
+    } else $('#credit').hidden = true;
     if (cfg.subtitle) $('#subtitle').textContent = cfg.subtitle;
     layout(cfg);
     $('#allread').addEventListener('click', () => { markSeen(visible().filter((p) => state.items[p.id] && state.items[p.id].key).map((p) => p.id)); paintRead(); });

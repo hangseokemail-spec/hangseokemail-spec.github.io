@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,600&display=swap">
 <style>
 :root{
   --bg:#f5f5f7; --ink:#1d1d1f; --mute:#6e6e73; --soft:#86868b; --hair:#e8e8ed;
@@ -48,9 +48,13 @@ button{font:inherit}
 /* 첫 화면 */
 .hero{max-width:880px;margin:0 auto;padding:76px 22px 12px;text-align:center}
 .eyebrow{margin:0;font-size:17px;font-weight:600;color:var(--mute)}
-.hero h1{margin:12px 0 0;font-size:clamp(44px,8vw,80px);font-weight:800;line-height:1.05;letter-spacing:-.04em;
+.hero h1{text-wrap:balance;word-break:keep-all;margin:12px 0 0;font-size:clamp(44px,8vw,80px);font-weight:800;line-height:1.05;letter-spacing:-.04em;
   background:linear-gradient(92deg,#d9822b 0%,#e0503d 28%,#9b4fe8 58%,#2f7fe8 88%);-webkit-background-clip:text;background-clip:text;color:transparent;
   padding-bottom:.08em}
+.credit{margin:14px 0 0;display:flex;align-items:baseline;justify-content:center;gap:9px;color:var(--soft)}
+.credit span{font-size:12px;font-weight:600;letter-spacing:.32em;text-transform:uppercase}
+.credit em{font-family:"Playfair Display",Georgia,serif;font-style:italic;font-weight:600;font-size:24px;letter-spacing:.01em;color:var(--ink)}
+.credit::before,.credit::after{content:"";width:28px;height:1px;background:#c7c7cc;align-self:center}
 .hero .sub{text-wrap:balance;max-width:640px;margin:18px auto 0;font-size:clamp(19px,2.4vw,23px);font-weight:500;line-height:1.42;color:var(--mute)}
 .hero .note{margin:26px 0 0;font-size:17px;color:var(--ink)}
 .hero .note b{color:var(--blue)}
@@ -214,7 +218,8 @@ footer a{color:#424245}
 
 <header class="hero">
   <p class="eyebrow" id="eyebrow">&nbsp;</p>
-  <h1 id="headline">석스가 만든 것들.</h1>
+  <h1 id="headline">매일 한 뼘씩, 세상 읽기.</h1>
+  <p class="credit" id="credit"><span>Directed by</span> <em>Seoks</em></p>
   <p class="sub" id="subtitle">신문, 현황판, 매거진, 그리고 게임까지. 새 호가 나오면 여기에 바로 올라와요.</p>
   <p class="note"><span id="hero-note">불러오는 중…</span><button class="textbtn" id="allread" type="button" hidden>모두 봤어요로 표시 ›</button></p>
 </header>
