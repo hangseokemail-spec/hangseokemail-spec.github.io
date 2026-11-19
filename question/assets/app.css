@@ -103,7 +103,7 @@ button { font: inherit; cursor: pointer; }
 .rtoc ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--line); }
 .rtoc a { display: block; padding: 4px 0 4px 12px; color: var(--ink-2); text-decoration: none; line-height: 1.45; }
 .rtoc a:hover { color: var(--accent); }
-@media (max-width: 860px) { .rbody { grid-template-columns: 1fr; } .rtoc { display: none; } }
+@media (max-width: 860px) { .rbody { grid-template-columns: minmax(0, 1fr); } .rtoc { display: none; } }
 
 .prose { font-family: var(--font-read); font-size: 17px; line-height: 1.9; word-break: keep-all; overflow-wrap: break-word; hyphens: none; }
 .prose p, .prose li, .prose blockquote p { text-align: justify; text-justify: inter-word; }
@@ -159,7 +159,7 @@ body.lock { overflow: hidden; }
 }
 @media print {
   .tabs-wrap, .mast-top, .rtoc, .site-footer, .rlinks { display: none; }
-  .rbody { grid-template-columns: 1fr; }
+  .rbody { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* 첫 화면: Q. 질문과 답 */
@@ -188,3 +188,4 @@ body.lock { overflow: hidden; }
   .ranswer p { font-size: 16px; line-height: 1.85; }
   .rfront { min-height: auto; padding-top: 12px; }
 }
+.prose, .rmain { min-width: 0; }
