@@ -130,8 +130,8 @@
       '<div class="qmeta"><span class="qno">Q' + pad(q.no) + '</span><span>' + esc(dotDate(q.date)) + '</span><span class="pill">' + esc(c.name) + '</span>' +
       (isRecent(q) ? '' : '<span class="pill arch">지난 질문</span>') + (q.version ? '<span>' + esc(q.version) + '</span>' : '') + '</div>' +
       '<p class="qtitle">' + esc(q.title) + '</p>' +
-      (q.question ? '<p class="qask">' + esc(String(q.question).split('\n')[0]) + '</p>' : '') +
-      '<p class="qanswer">' + esc(q.answer) + '</p>' +
+      (q.question ? '<div class="qask">' + paras(q.question, /\n+/).map(function (x) { return '<p>' + esc(x) + '</p>'; }).join('') + '</div>' : '') +
+      '<div class="qanswer">' + answerHtml(q) + '</div>' +
       '<span class="qmore">질문과 답 보기 →</span></a>';
   }
 
@@ -159,21 +159,26 @@
   }
 
   // ---------- report ----------
+  // 줄바꿈으로 나눈 문단들 (빈 문단은 버림)
+  function paras(s, sep) {
+    return String(s || '').split(sep).map(function (x) { return String(x).trim(); }).filter(Boolean);
+  }
+
   function answerHtml(q) {
-    var a = Array.isArray(q.lead) ? q.lead : String(q.answer || '').split(/\n\s*\n/);
-    return a.filter(function (x) { return String(x).trim(); }).map(function (x) { return '<p>' + esc(String(x).trim()) + '</p>'; }).join('');
+    var a = Array.isArray(q.lead) ? q.lead.map(function (x) { return String(x).trim(); }).filter(Boolean) : paras(q.answer, /\n\s*\n/);
+    return a.map(function (x) { return '<p>' + esc(x) + '</p>'; }).join('');
   }
 
   // 첫 화면: Q. 질문과 답만. 본문은 '자세히 보고 싶다면 클릭'를 눌러야 열린다.
   function reportShell(q, mode) {
     var c = catOf(q.category);
-    var ask = String(q.question || q.title || '').split('\n')[0];
-    var more = String(q.question || '').split('\n').slice(1).join(' ').trim();
+    // 질문은 줄마다 한 문단. 모든 문단을 같은 모양으로, 'Q.' 오른쪽에 나란히 맞춰 둔다.
+    var asks = paras(q.question || q.title, /\n+/);
     return '<section class="rfront">' +
       '<div class="qmeta"><span class="qno">Q' + pad(q.no) + '</span><span>' + esc(dotDate(q.date)) + '</span><span class="pill">' + esc(c.name) + '</span>' +
       (isRecent(q) ? '' : '<span class="pill arch">지난 질문</span>') + '</div>' +
-      '<h2 class="rq"' + (mode === 'detail' ? ' id="detailTitle"' : '') + '><span class="qmark">Q.</span> ' + esc(ask) + '</h2>' +
-      (more ? '<p class="rq-more">' + esc(more) + '</p>' : '') +
+      '<h2 class="rq"' + (mode === 'detail' ? ' id="detailTitle"' : '') + '><span class="qmark" aria-hidden="true">Q.</span><span class="rq-body">' +
+      asks.map(function (x) { return '<span class="rq-p">' + esc(x) + '</span>'; }).join('') + '</span></h2>' +
       '<div class="ranswer">' + answerHtml(q) + '</div>' +
       '<button type="button" class="readmore" data-readmore>자세히 보고 싶다면 클릭 <span aria-hidden="true">↓</span></button>' +
       '</section>' +

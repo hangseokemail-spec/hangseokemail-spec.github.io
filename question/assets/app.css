@@ -84,8 +84,12 @@ button { font: inherit; cursor: pointer; }
 .pill.arch { background: var(--line); color: var(--ink-2); }
 .qtitle { margin: 6px 0 8px; font-size: 18px; line-height: 1.45; font-weight: 700; }
 .qask { margin: 0 0 10px; padding-left: 10px; border-left: 2px solid var(--line); color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+.qask p { margin: 0 0 4px; text-align: justify; text-justify: inter-word; word-break: keep-all; overflow-wrap: break-word; }
+.qask p:last-child { margin-bottom: 0; }
 .issue-line { font-family: var(--font-read); font-style: italic; letter-spacing: .5px; }
 .qanswer { margin: 0; font-family: var(--font-read); font-size: 15.5px; line-height: 1.8; color: var(--ink); text-align: justify; word-break: keep-all; overflow-wrap: break-word; }
+.qanswer p { margin: 0 0 8px; }
+.qanswer p:last-child { margin-bottom: 0; }
 .qmore { display: inline-block; margin-top: 10px; font-size: 14px; color: var(--accent); font-weight: 600; }
 .empty-cat { color: var(--ink-3); font-size: 14px; margin: 0; padding: 4px 0 8px; }
 
@@ -166,9 +170,12 @@ body.lock { overflow: hidden; }
 .rfront { min-height: calc(100vh - 230px); display: flex; flex-direction: column; justify-content: center; max-width: 820px; margin: 0 auto; padding: 24px 0 40px; }
 .detail-body .rfront { min-height: calc(100vh - 140px); }
 .rfront .qmeta { margin-bottom: 18px; }
-.rq { margin: 0 0 8px; font-family: var(--font-read); font-size: clamp(22px, 3.4vw, 30px); line-height: 1.5; font-weight: 700; word-break: keep-all; }
-.qmark { color: var(--accent); font-family: var(--font-mast); font-weight: 900; margin-right: 2px; }
-.rq-more { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; line-height: 1.7; word-break: keep-all; }
+/* 질문: 'Q.'를 왼쪽 칸에 두고, 문단들은 오른쪽 칸에서 같은 크기·같은 왼쪽 선·양쪽 정렬로 맞춘다 */
+.rq { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: .4em; align-items: baseline; margin: 0 0 8px; font-family: var(--font-read); font-size: clamp(20px, 2.8vw, 26px); line-height: 1.6; font-weight: 700; word-break: keep-all; overflow-wrap: break-word; }
+.qmark { color: var(--accent); font-family: var(--font-mast); font-weight: 900; }
+.rq-body { min-width: 0; }
+.rq-p { display: block; margin: 0 0 .55em; text-align: justify; text-justify: inter-word; }
+.rq-p:last-child { margin-bottom: 0; }
 .ranswer { margin: 22px 0 30px; padding: 22px 24px; background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 0 var(--radius) var(--radius) 0; box-shadow: var(--shadow); }
 .ranswer p { margin: 0 0 12px; font-family: var(--font-read); font-size: clamp(16.5px, 2.1vw, 19px); line-height: 1.95; text-align: justify; text-justify: inter-word; word-break: keep-all; overflow-wrap: break-word; }
 .ranswer p:last-child { margin-bottom: 0; }
@@ -186,6 +193,9 @@ body.lock { overflow: hidden; }
 @media (max-width: 600px) {
   .ranswer { padding: 16px 14px; border-left-width: 3px; }
   .ranswer p { font-size: 16px; line-height: 1.85; }
+  .rq { font-size: 18px; line-height: 1.65; column-gap: .3em; }
+  /* 좁은 화면에서 굵은 큰 글씨를 양쪽 정렬하면 낱말 사이가 크게 벌어져 왼쪽 정렬로 둔다 */
+  .rq-p { text-align: left; }
   .rfront { min-height: auto; padding-top: 12px; }
 }
 .prose, .rmain { min-width: 0; }
