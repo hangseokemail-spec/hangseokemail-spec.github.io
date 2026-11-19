@@ -4,6 +4,28 @@
   "headline": "매일 한 뼘씩, 세상 읽기.",
   "credit": "Directed by Seoks",
   "subtitle": "신문, 현황판, 매거진, 그리고 게임까지. 새 호가 나오면 여기에 바로 올라와요.",
+  "tabs": [
+    {
+      "id": "market",
+      "name": "시장·투자",
+      "note": "매일 아침 신문과 풍향계, 분기마다 구루들의 13F."
+    },
+    {
+      "id": "science",
+      "name": "과학",
+      "note": "생명과학·IT 매거진과 어린이 과학 신문, 매주 금요일 저녁."
+    },
+    {
+      "id": "question",
+      "name": "질문",
+      "note": "궁금한 게 생기면 여러 학문의 눈으로 답을 찾아요."
+    },
+    {
+      "id": "play",
+      "name": "놀이",
+      "note": "가족이 함께 한 층씩 오르는 99층 탑."
+    }
+  ],
   "groups": [
     {
       "id": "daily",
@@ -38,6 +60,7 @@
       "kind": "시장 신문",
       "desc": "매일 아침 미국 시장을 정리하는 개인 신문",
       "group": "daily",
+      "tab": "market",
       "url": "/news/",
       "schedule": {
         "days": [
@@ -57,10 +80,14 @@
         "index": "/news/data/index.json",
         "list": "editions",
         "label": "제{issue}호",
-        "title": "{lead}",
+        "title": [
+          "{d.column.title}",
+          "{lead}"
+        ],
         "cut": " — ",
         "cover": "/news/data/covers/{date}.jpg",
-        "summary": "{summary}"
+        "summary": "{summary}",
+        "detail": "/news/data/editions/{date}.json"
       },
       "cover": {
         "style": "plain"
@@ -74,6 +101,7 @@
       "kind": "Seoks 증시현황판",
       "desc": "심리·유동성 지표로 읽는 오늘 시장의 바람",
       "group": "daily",
+      "tab": "market",
       "url": "/seoks/?tab=wind",
       "schedule": {
         "days": [
@@ -104,6 +132,7 @@
       "kind": "주간 매거진",
       "desc": "생명과학·IT 주간 웹 매거진",
       "group": "weekly",
+      "tab": "science",
       "url": "/bios/",
       "schedule": {
         "days": [
@@ -135,6 +164,7 @@
       "kind": "어린이 과학 신문",
       "desc": "서아가 기획한 주간 과학 교양지",
       "group": "weekly",
+      "tab": "science",
       "url": "/nova/",
       "schedule": {
         "days": [
@@ -168,6 +198,7 @@
       "kind": "13F 트래커",
       "desc": "투자 구루 18곳이 분기마다 공시하는 13F로 보는 매매",
       "group": "quarterly",
+      "tab": "market",
       "url": "/guru13f/",
       "accent": "#e34948",
       "schedule": {
@@ -194,6 +225,7 @@
       "kind": "질문 보고서",
       "desc": "질문 하나를 여러 학문의 눈으로 파고드는 보고서",
       "group": "irregular",
+      "tab": "question",
       "url": "/question/",
       "accent": "#1f4fd8",
       "statusText": "지금까지 질문 {count}개",
@@ -230,6 +262,7 @@
       "kind": "가족 게임",
       "desc": "99층 탑을 함께 오르는 우리 가족 모험 이야기",
       "group": "always",
+      "tab": "play",
       "url": "http://3.34.169.45/",
       "accent": "#8a5cf0",
       "source": {
@@ -266,5 +299,6 @@
         ]
       }
     }
-  ]
+  ],
+  "allNote": "만든 것 전부, 자주 나오는 순서로."
 }

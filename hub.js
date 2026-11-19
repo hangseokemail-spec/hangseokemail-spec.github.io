@@ -10,6 +10,7 @@
   const WD = '일월화수목금토';
   const REFRESH = 20 * 60e3;
   const STORE = 'seoks-hub-seen-v1';
+  const TABSTORE = 'seoks-hub-tab-v1';
 
   const abs = (p) => !p ? p : /^[a-z]+:/i.test(p) ? p : p[0] === '/' ? (SAME ? p : SITE + p) : p;
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -514,56 +515,103 @@
     const pill = $('#unread');
     pill.hidden = !unread;
     $('#unread-n').textContent = unread;
-    pill.onclick = () => first && first.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    $('#allread').hidden = !unread;
-    $('#hero-note').innerHTML = unread
-      ? `아직 안 본 새 호가 <b>${unread}개</b> 있어요.`
-      : '새로 나온 건 모두 봤어요. 다음 호를 기다리는 중.';
+    pill.onclick = () => showTab('new', true);
+    state.unread = unread;
+    paintTabs();
     document.title = (unread ? `(${unread}) ` : '') + (state.cfg.title || '석스 가판대');
   }
 
   // 모든 카드를 가장 큰 카드 높이에 맞춘다(글은 자르지 않고, 남는 자리는 상태 줄 위로).
   function equalize() {
-    // 칸 제목은 한 줄로: 설명까지 다 안 들어가면 설명을 빼고 이름만 둔다(옆 칸 카드와 높이가 어긋나지 않게).
-    document.querySelectorAll('.shelf h2').forEach((h) => {
-      h.classList.remove('short');
-      if (h.scrollWidth > h.clientWidth + 1) h.classList.add('short');
-    });
-    const cards = [...document.querySelectorAll('.card')];
-    cards.forEach((c) => { c.style.minHeight = ''; });
+    document.querySelectorAll('.card').forEach((c) => { c.style.minHeight = ''; });
+    const cards = [...document.querySelectorAll('.card')].filter((c) => !c.hidden);
     const max = Math.max(0, ...cards.map((c) => c.getBoundingClientRect().height));
     if (max > 0) cards.forEach((c) => { c.style.minHeight = Math.ceil(max) + 'px'; });
   }
   let eqTimer = 0;
   const equalizeSoon = () => { clearTimeout(eqTimer); eqTimer = setTimeout(equalize, 120); };
 
+  /* ---------- 탭 ---------- */
+  // 탭: '새로 나온 것'(안 본 호) · projects.json의 tabs · '전체'. 프로젝트는 tab 값으로 들어간다.
+  const tabOf = (p) => ((state.cfg.tabs || []).some((t) => t.id === p.tab) ? p.tab : 'etc');
+  function buildTabs(cfg) {
+    const ps = cfg.projects.filter((p) => !p.hidden);
+    const tabs = (cfg.tabs || []).filter((t) => ps.some((p) => p.tab === t.id));
+    if (ps.some((p) => tabOf(p) === 'etc')) tabs.push({ id: 'etc', name: '그 밖의 것', note: '' });
+    return [{ id: 'new', name: '새로 나온 것' }, ...tabs, { id: 'all', name: '전체', note: cfg.allNote || '' }];
+  }
+
   function layout(cfg) {
+    const gi = (id) => { const i = (cfg.groups || []).findIndex((g) => g.id === id); return i < 0 ? 99 : i; };
+    const ps = cfg.projects.filter((p) => !p.hidden).map((p, i) => ({ p, i }))
+      .sort((x, y) => gi(x.p.group) - gi(y.p.group) || x.i - y.i).map((x) => x.p); // 자주 나오는 순서
+    state.tabs = buildTabs(cfg);
+    const bar = $('#tabs');
+    bar.innerHTML = state.tabs.map((t) => `<button class="tab" role="tab" type="button" data-tab="${esc(t.id)}" aria-selected="false">${esc(t.name)}<i class="tdot" aria-hidden="true"></i><em class="tn"></em></button>`).join('');
+    bar.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab, true)));
     const main = $('#main');
-    main.innerHTML = '';
-    const groups = cfg.groups && cfg.groups.length ? cfg.groups : [{ id: '', name: '' }];
-    const used = new Set();
-    const nav = $('#navlinks');
-    nav.innerHTML = '';
-    const addSection = (g, ps) => {
-      const sec = document.createElement('section');
-      sec.className = 'shelf';
-      sec.id = 'g-' + (g.id || 'etc');
-      sec.style.setProperty('--n', ps.length);
-      sec.classList.toggle('n1', ps.length === 1);
-      sec.innerHTML = g.name ? `<h2><b>${esc(g.name)}.</b>${g.tagline ? `<span class="tg"> ${esc(g.tagline)}</span>` : ''}</h2>` : '';
-      const grid = document.createElement('div');
-      grid.className = 'grid';
-      ps.forEach((p) => { grid.appendChild(cardShell(p)); used.add(p.id); });
-      sec.appendChild(grid);
-      main.appendChild(sec);
-      if (g.name) nav.insertAdjacentHTML('beforeend', `<a href="#${sec.id}">${esc(g.name.replace(/ 나오는 것$/, ''))}</a>`);
-    };
-    groups.forEach((g) => {
-      const ps = cfg.projects.filter((p) => (p.group || '') === g.id && !p.hidden);
-      if (ps.length) addSection(g, ps);
+    main.innerHTML = '<p class="tabnote" id="tabnote" hidden></p><div class="grid" id="grid"></div><p class="empty" id="empty" hidden></p>';
+    ps.forEach((p) => { const c = cardShell(p); c.dataset.tab = tabOf(p); $('#grid').appendChild(c); });
+  }
+
+  function paintTabs() {
+    const unreadCards = [...document.querySelectorAll('#grid .card.unread')];
+    document.querySelectorAll('.tab').forEach((b) => {
+      const t = b.dataset.tab;
+      const n = t === 'new' ? unreadCards.length : t === 'all' ? 0 : unreadCards.filter((c) => c.dataset.tab === t).length;
+      $('.tn', b).textContent = t === 'new' && n ? n : '';
+      b.classList.toggle('has-new', t !== 'new' && n > 0);
     });
-    const rest = cfg.projects.filter((p) => !used.has(p.id) && !p.hidden);
-    if (rest.length) addSection({ id: 'etc', name: '그 밖의 것', tagline: '' }, rest);
+    paintTabNote();
+  }
+
+  function paintTabNote() {
+    const el = $('#tabnote');
+    if (!el) return;
+    if (state.tab === 'new') {
+      const n = state.unread || 0;
+      el.innerHTML = n ? `아직 안 본 새 호가 <b>${n}개</b> 있어요.<button class="textbtn" id="allread" type="button">모두 봤어요로 표시 ›</button>` : '';
+      const btn = $('#allread');
+      if (btn) btn.addEventListener('click', () => {
+        markSeen(visible().filter((p) => state.items[p.id] && state.items[p.id].key).map((p) => p.id));
+        paintRead(); showTab('new');
+      });
+    } else {
+      const t = (state.tabs || []).find((x) => x.id === state.tab) || {};
+      el.textContent = t.note || '';
+    }
+    el.hidden = !el.textContent.trim();
+  }
+
+  function showTab(id, byUser) {
+    if (!(state.tabs || []).some((t) => t.id === id)) id = state.tabs[1] ? state.tabs[1].id : 'all';
+    state.tab = id;
+    document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === id ? 'true' : 'false'));
+    let shown = 0;
+    document.querySelectorAll('#grid .card').forEach((c) => {
+      // 데이터를 읽기 전에는 '새로 나온 것'을 가릴 수 없으니 모두 보여 준다.
+      const on = id === 'all' || (id === 'new' ? (!state.ready || c.classList.contains('unread')) : c.dataset.tab === id);
+      c.hidden = !on;
+      if (on) shown++;
+    });
+    const empty = $('#empty');
+    empty.hidden = shown > 0;
+    empty.textContent = id === 'new' ? '새로 나온 건 모두 봤어요. 다음 호를 기다리는 중이에요.' : '아직 여기에 놓인 것이 없어요.';
+    paintTabNote();
+    if (byUser) {
+      try { localStorage.setItem(TABSTORE, id); } catch (err) { /* 저장 못 해도 그만 */ }
+      try { history.replaceState(null, '', '#' + id); } catch (err) { /* 무시 */ }
+      const act = $('.tab[aria-selected="true"]');
+      if (act) act.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
+    equalize();
+    // 탭을 눌렀는데 카드가 화면 아래로 넘치면, 탭 막대가 위에 붙도록 올려서 한 화면에 담는다.
+    if (byUser) {
+      const bar = $('.tabsbar'), grid = $('#grid');
+      const navH = $('.gnav').getBoundingClientRect().height;
+      const barTop = bar.getBoundingClientRect().top + scrollY - navH;
+      if (grid.getBoundingClientRect().bottom > innerHeight && scrollY < barTop - 2) scrollTo({ top: barTop, behavior: 'smooth' });
+    }
   }
 
   async function refresh() {
@@ -579,7 +627,7 @@
     }));
     $('#checked').textContent = `마지막 확인 ${hm(now)}`;
     paintRead();
-    equalize();
+    if (state.ready) showTab(state.tab); else equalize();
   }
 
   async function start() {
@@ -598,11 +646,18 @@
       const m = String(cfg.credit).match(/^(.*\bby)\s+(.+)$/i);
       $('#credit').innerHTML = m ? `<span>${esc(m[1])}</span> <em>${esc(m[2])}</em>` : `<em>${esc(cfg.credit)}</em>`;
     } else $('#credit').hidden = true;
-    if (cfg.subtitle) $('#subtitle').textContent = cfg.subtitle;
     layout(cfg);
-    $('#allread').addEventListener('click', () => { markSeen(visible().filter((p) => state.items[p.id] && state.items[p.id].key).map((p) => p.id)); paintRead(); });
+    const fromHash = decodeURIComponent(location.hash.slice(1));
+    const asked = state.tabs.some((t) => t.id === fromHash) ? fromHash : null;
+    let saved = null; try { saved = localStorage.getItem(TABSTORE); } catch (err) { saved = null; }
+    showTab(asked || 'new');
     $('#forget').addEventListener('click', (e) => { e.preventDefault(); try { localStorage.removeItem(STORE); } catch (err) { /* 무시 */ } paintRead(); });
     await refresh();
+    state.ready = true;
+    // 주소에 탭이 없으면: 안 본 새 호가 있을 때 '새로 나온 것', 없으면 지난번에 본 탭(없으면 첫 분류)
+    const fallback = saved && saved !== 'new' && state.tabs.some((t) => t.id === saved) ? saved : state.tabs[1].id;
+    showTab(asked || (state.unread ? 'new' : fallback));
+    window.addEventListener('hashchange', () => { const h = decodeURIComponent(location.hash.slice(1)); if (state.tabs.some((t) => t.id === h)) showTab(h); });
     setInterval(() => { if (!document.hidden) refresh(); }, REFRESH);
     document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - state.last > 5 * 60e3) refresh(); });
     window.addEventListener('pageshow', (e) => { if (e.persisted) paintRead(); }); // 뒤로 가기로 돌아왔을 때
