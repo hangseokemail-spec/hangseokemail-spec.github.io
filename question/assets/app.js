@@ -113,10 +113,11 @@
       tabs(q.id);
       $('#content').dataset.view = 't:' + q.id;
       $('#content').innerHTML = reportShell(q, 'tab');
-      fillReport(q, $('#content'));
+      $('#content').dataset.qid = q.id; // 본문은 '왜 그런지 따라가기'를 누를 때 불러온다(숨긴 상태에서는 그래프 크기를 잴 수 없음)
     } else {
       tabs('list');
       $('#content').dataset.view = 'list';
+      delete $('#content').dataset.qid;
       $('#content').innerHTML = listHtml();
     }
     window.scrollTo(0, 0);
@@ -131,7 +132,7 @@
       '<p class="qtitle">' + esc(q.title) + '</p>' +
       (q.question ? '<p class="qask">' + esc(String(q.question).split('\n')[0]) + '</p>' : '') +
       '<p class="qanswer">' + esc(q.answer) + '</p>' +
-      '<span class="qmore">보고서 전체 보기 →</span></a>';
+      '<span class="qmore">질문과 답 보기 →</span></a>';
   }
 
   function listHtml() {
@@ -158,21 +159,32 @@
   }
 
   // ---------- report ----------
+  function readMinutes(q) { return q.minutes ? ' · 읽는 데 약 ' + esc(q.minutes) + '분' : ''; }
+  function answerHtml(q) {
+    var a = Array.isArray(q.lead) ? q.lead : String(q.answer || '').split(/\n\s*\n/);
+    return a.filter(function (x) { return String(x).trim(); }).map(function (x) { return '<p>' + esc(String(x).trim()) + '</p>'; }).join('');
+  }
+
+  // 첫 화면: Q. 질문과 답만. 본문은 '왜 그런지 따라가기'를 눌러야 열린다.
   function reportShell(q, mode) {
     var c = catOf(q.category);
-    var drive = safeUrl(q.drive), seojae = safeUrl(q.seojae);
-    return '<header class="rhead">' +
+    var ask = String(q.question || q.title || '').split('\n')[0];
+    var more = String(q.question || '').split('\n').slice(1).join(' ').trim();
+    return '<section class="rfront">' +
       '<div class="qmeta"><span class="qno">Q' + pad(q.no) + '</span><span>' + esc(dotDate(q.date)) + '</span><span class="pill">' + esc(c.name) + '</span>' +
-      (isRecent(q) ? '' : '<span class="pill arch">지난 질문</span>') + (q.version ? '<span>' + esc(q.version) + '</span>' : '') + '</div>' +
-      '<h2 class="rtitle"' + (mode === 'detail' ? ' id="detailTitle"' : '') + '>' + esc(q.title) + '</h2>' +
-      (q.question ? '<p class="rquestion">' + esc(q.question).replace(/\n/g, '<br>') + '</p>' : '') +
-      '<div class="rlinks">' +
-      (drive ? '<a href="' + esc(drive) + '" target="_blank" rel="noopener">구글 드라이브 문서</a>' : '') +
-      (seojae ? '<a href="' + esc(seojae) + '" target="_blank" rel="noopener">서재에서 질문하기</a>' : '') +
-      '</div></header>' +
-      '<div class="rbody"><nav class="rtoc" aria-label="목차"><p>목차</p><ol></ol></nav>' +
-      '<article class="prose"><p class="state">보고서를 불러오는 중…</p></article></div>' +
-      '<p class="rfoot">이 보고서는 근거 등급(A 공식 통계·법령·동료심사 논문, B 신뢰할 만한 언론·연구기관, C 추정·사설 기관 단독 집계)을 출처마다 표시합니다. 시나리오 수치는 확률이 아니라 편집진 판단 가중치입니다.</p>';
+      (isRecent(q) ? '' : '<span class="pill arch">지난 질문</span>') + '</div>' +
+      '<h2 class="rq"' + (mode === 'detail' ? ' id="detailTitle"' : '') + '><span class="qmark">Q.</span> ' + esc(ask) + '</h2>' +
+      (more ? '<p class="rq-more">' + esc(more) + '</p>' : '') +
+      '<div class="ranswer">' + answerHtml(q) + '</div>' +
+      '<button type="button" class="readmore" data-readmore>왜 그런지 따라가기' + readMinutes(q) + ' <span aria-hidden="true">↓</span></button>' +
+      '</section>' +
+      '<section class="rmain" hidden>' +
+      '<div class="rmain-head"><h2 class="rtitle">' + esc(q.title) + '</h2>' +
+      '<button type="button" class="btn-outline toc-toggle" data-toc-toggle aria-pressed="false">차례 숨기기</button></div>' +
+      '<div class="rbody"><nav class="rtoc" aria-label="차례"><p>차례</p><ol></ol></nav>' +
+      '<article class="prose"><p class="state">불러오는 중…</p></article></div>' +
+      '<p class="rback"><button type="button" class="btn-ghost" data-totop>↑ 질문과 답으로 돌아가기</button></p>' +
+      '</section>';
   }
 
   // 한국어 본문에서 '**[확정]**은'처럼 굵은 글씨 바로 뒤에 조사가 붙으면 마크다운이 굵게 처리하지 못한다.
@@ -208,6 +220,14 @@
       if (toc) toc.innerHTML = items;
       hydrateCharts(art);
     });
+  }
+
+  // ---------- 차례 숨기기 (선택 기억) ----------
+  function tocHidden() { try { return localStorage.getItem('sq-toc') === 'hide'; } catch (e) { return false; } }
+  function applyToc(root) {
+    var h = tocHidden();
+    root.querySelectorAll('.rmain').forEach(function (m) { m.classList.toggle('wide', h); });
+    root.querySelectorAll('[data-toc-toggle]').forEach(function (b) { b.textContent = h ? '차례 보이기' : '차례 숨기기'; b.setAttribute('aria-pressed', String(h)); });
   }
 
   // ---------- charts ----------
@@ -264,8 +284,8 @@
     det.hidden = false;
     document.body.classList.add('lock');
     body.innerHTML = reportShell(q, 'detail');
+    body.dataset.qid = q.id;
     $('.detail-sheet').scrollTop = 0;
-    fillReport(q, body);
     $('.detail-sheet').focus();
   }
   function closeDetail(silent) {
@@ -310,6 +330,30 @@
       e.preventDefault();
       var el = document.getElementById(jump.getAttribute('data-jump'));
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    var rm = t.closest('[data-readmore]');
+    if (rm) {
+      e.preventDefault();
+      var scope = rm.closest('#detailBody') || $('#content');
+      var main = $('.rmain', scope);
+      if (main) {
+        main.hidden = false; applyToc(scope);
+        if (!main.dataset.loaded) { main.dataset.loaded = '1'; var qid = scope.dataset.qid; if (app.byId[qid]) fillReport(app.byId[qid], scope); }
+        setTimeout(function () { main.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 30);
+      }
+      return;
+    }
+    if (t.closest('[data-toc-toggle]')) {
+      e.preventDefault();
+      try { localStorage.setItem('sq-toc', tocHidden() ? 'show' : 'hide'); } catch (x) {}
+      applyToc(document);
+      return;
+    }
+    if (t.closest('[data-totop]')) {
+      e.preventDefault();
+      var sc = t.closest('#detailBody') ? $('.detail-sheet') : null;
+      if (sc) sc.scrollTo({ top: 0, behavior: 'smooth' }); else window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     if (t.closest('[data-close]')) { e.preventDefault(); closeDetail(false); return; }
