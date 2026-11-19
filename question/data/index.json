@@ -1,0 +1,9 @@
+{
+ "title": "Seok's Question",
+ "updated": "2026-11-19",
+ "categories": [
+  {"id": "grand", "name": "거대 담론", "desc": "인간과 문명, AI와 인류의 미래처럼 큰 질문"},
+  {"id": "edu", "name": "교육·입시", "desc": "평가, 대입, 학교와 교사의 미래"}
+ ],
+ "questions": []
+}
