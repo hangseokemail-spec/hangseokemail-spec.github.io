@@ -59,7 +59,9 @@
       },
       "cover": {
         "style": "plain"
-      }
+      },
+      "read": "https://hangseokemail-spec.github.io/news/data/editions/{date}.json 의 lead와 column(title·standfirst·sections·cards·signals) — 그날 신문 전체의 결론",
+      "summaryTone": "한다체"
     },
     {
       "id": "seoks",
@@ -87,7 +89,9 @@
       },
       "cover": {
         "style": "wind"
-      }
+      },
+      "read": "https://hangseokemail-spec.github.io/seoks/data/comments/{date}.json 의 wind(verdict·headline·points·guide) — 풍향계 점수가 왜 그렇고 그래서 어떻게 할지",
+      "summaryTone": "한다체"
     },
     {
       "id": "bios",
@@ -116,7 +120,9 @@
         "style": "overlay",
         "mast": "BIOS",
         "sub": "바이오스 · 생명과학·IT 주간"
-      }
+      },
+      "read": "https://hangseokemail-spec.github.io/bios/{file} 의 커버스토리(카드 제목과 같은 h2 아래 본문 전체, '편집장이 본 의미' 포함) — 그 기사의 핵심 주장",
+      "summaryTone": "한다체"
     },
     {
       "id": "nova",
@@ -147,7 +153,9 @@
         "style": "paper",
         "mast": "Nova",
         "sub": "서아가 기획한 주간 과학 교양지"
-      }
+      },
+      "read": "https://hangseokemail-spec.github.io/nova/editions/{file} 의 cover(headline·lead)와 그 머리기사 articles.*.body 전체 — 초등학생 독자에게 남길 한 가지",
+      "summaryTone": "해요체(초등학생 독자용)"
     },
     {
       "id": "question",
@@ -181,7 +189,9 @@
         "mast": "Seok's Question",
         "sub": "하나의 질문을 여러 학문의 눈으로",
         "empty": "첫 질문을 기다리는 중"
-      }
+      },
+      "read": "https://hangseokemail-spec.github.io/question/data/index.json 의 이 질문 answer와 https://hangseokemail-spec.github.io/question/{file} 보고서 — 질문에 대한 최종 답의 핵심",
+      "summaryTone": "한다체"
     },
     {
       "id": "gugutop",
