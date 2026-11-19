@@ -147,7 +147,7 @@
         label: `미국 ${mm}/${dd} 마감`,
         dateText: '',
         title: wc.verdict || wc.headline || [zone.name, zone.act].filter(Boolean).join(' · '),
-        summary: (c && (c.oneliner || (c.market && c.market.headline))) || wc.headline || '',
+        summary: (c && c.summary) || '',
         publishedAt: g ? at(g[1], g[2]) : null,
         wind: { score, zone, zones: w.zones || [], spark: w.w.slice(Math.max(0, i - 59), i + 1).map(Number) },
       };
@@ -401,7 +401,8 @@
     hl.textContent = it.title || '';
     hl.hidden = !it.title;
     hl.classList.toggle('dup', coverShowsTitle(p)); // 표지에 이미 제목이 있으면 큰 화면에선 숨김
-    sm.textContent = it.summary || ((it.empty || !it.title) ? p.desc || '' : '');
+    const curated = ((state.summaries || {})[p.id] || {})[it.key];
+    sm.textContent = curated || it.summary || ((it.empty || !it.title) ? p.desc || '' : '');
     sm.hidden = !sm.textContent;
     const s = statusOf(p, it, now);
     $('.st', a).className = 'st ' + s.cls;
@@ -451,6 +452,16 @@
     document.title = (unread ? `(${unread}) ` : '') + (state.cfg.title || '석스 가판대');
   }
 
+  // 모든 카드를 가장 큰 카드 높이에 맞춘다(글은 자르지 않고, 남는 자리는 상태 줄 위로).
+  function equalize() {
+    const cards = [...document.querySelectorAll('.card')];
+    cards.forEach((c) => { c.style.minHeight = ''; });
+    const max = Math.max(0, ...cards.map((c) => c.getBoundingClientRect().height));
+    if (max > 0) cards.forEach((c) => { c.style.minHeight = Math.ceil(max) + 'px'; });
+  }
+  let eqTimer = 0;
+  const equalizeSoon = () => { clearTimeout(eqTimer); eqTimer = setTimeout(equalize, 120); };
+
   function layout(cfg) {
     const main = $('#main');
     main.innerHTML = '';
@@ -483,6 +494,7 @@
   async function refresh() {
     const now = Date.now();
     state.last = now;
+    state.summaries = await getJSON('summaries.json').catch(() => state.summaries || {});
     await Promise.all(visible().map(async (p) => {
       const ad = ADAPTERS[(p.source && p.source.type) || 'static'];
       try {
@@ -492,6 +504,7 @@
     }));
     $('#checked').textContent = `마지막 확인 ${hm(now)}`;
     paintRead();
+    equalize();
   }
 
   async function start() {
@@ -518,6 +531,8 @@
     setInterval(() => { if (!document.hidden) refresh(); }, REFRESH);
     document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - state.last > 5 * 60e3) refresh(); });
     window.addEventListener('pageshow', (e) => { if (e.persisted) paintRead(); }); // 뒤로 가기로 돌아왔을 때
+    window.addEventListener('resize', equalizeSoon);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(equalize);
     window.addEventListener('storage', (e) => { if (e.key === STORE) paintRead(); }); // 다른 탭에서 읽었을 때
   }
 

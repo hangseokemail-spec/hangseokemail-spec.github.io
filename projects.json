@@ -55,11 +55,7 @@
         "title": "{lead}",
         "cut": " — ",
         "cover": "/news/data/covers/{date}.jpg",
-        "summary": [
-          "{summary}",
-          "{lead}"
-        ],
-        "summaryAfter": " — "
+        "summary": "{summary}"
       },
       "cover": {
         "style": "plain"
@@ -114,14 +110,7 @@
         "label": "{label}",
         "title": "{title}",
         "cover": "/bios/img/{date}/cover.webp",
-        "summary": [
-          "{summary}"
-        ],
-        "summaryHtml": {
-          "url": "/bios/{file}",
-          "selector": ".cover-main p"
-        },
-        "sentences": -1
+        "summary": "{summary}"
       },
       "cover": {
         "style": "overlay",
@@ -152,10 +141,7 @@
         "detail": "/nova/editions/{file}",
         "title": "{d.cover.headline}",
         "svg": "d.figs.cover",
-        "summary": [
-          "{summary}",
-          "{d.cover.lead.0}"
-        ]
+        "summary": "{summary}"
       },
       "cover": {
         "style": "paper",
@@ -188,10 +174,7 @@
             "field": "category"
           }
         },
-        "summary": [
-          "{summary}",
-          "{answer}"
-        ]
+        "summary": "{summary}"
       },
       "cover": {
         "style": "type",
