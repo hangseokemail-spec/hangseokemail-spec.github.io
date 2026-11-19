@@ -1,6 +1,6 @@
 # Seok's Question
 
-석스님의 질문에 다섯 분야 전문가(과학·역사·경제·인문·지정학)가 각자 답하고 함께 의논해 하나로 모은 답을 모아 보는 사이트입니다. https://hangseokemail-spec.github.io/question/
+석스님의 질문에 다섯 분야 전문가(과학·역사·경제·인문·세상)가 각자 답하고 함께 의논해 하나로 모은 답을 모아 보는 사이트입니다. https://hangseokemail-spec.github.io/question/
 
 ## 구조
 - `index.html`, `assets/`: 웹앱 (휴대폰·태블릿·PC 자동 배치)
