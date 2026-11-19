@@ -1,0 +1,204 @@
+{
+  "title": "석스 가판대",
+  "owner": "석스",
+  "headline": "석스가 만든 것들.",
+  "subtitle": "신문, 현황판, 매거진, 그리고 게임까지. 새 호가 나오면 여기에 바로 올라와요.",
+  "groups": [
+    {
+      "id": "daily",
+      "name": "매일 나오는 것",
+      "tagline": "아침마다 새로 도착해요."
+    },
+    {
+      "id": "weekly",
+      "name": "매주 나오는 것",
+      "tagline": "한 주를 담아 금요일 저녁에."
+    },
+    {
+      "id": "irregular",
+      "name": "궁금할 때마다",
+      "tagline": "질문이 생기면 나와요."
+    },
+    {
+      "id": "always",
+      "name": "언제든",
+      "tagline": "생각날 때 들어가 노는 곳."
+    }
+  ],
+  "projects": [
+    {
+      "id": "news",
+      "name": "Seok's Paper",
+      "kind": "시장 신문",
+      "desc": "매일 아침 미국 시장을 정리하는 개인 신문",
+      "group": "daily",
+      "url": "/news/",
+      "schedule": {
+        "days": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "time": "07:30"
+      },
+      "accent": "#e8b04a",
+      "source": {
+        "type": "index",
+        "index": "/news/data/index.json",
+        "list": "editions",
+        "label": "제{issue}호",
+        "title": "{lead}",
+        "cut": " — ",
+        "cover": "/news/data/covers/{date}.jpg"
+      },
+      "cover": {
+        "style": "plain"
+      }
+    },
+    {
+      "id": "seoks",
+      "name": "증시 풍향계",
+      "kind": "Seoks 증시현황판",
+      "desc": "심리·유동성 지표로 읽는 오늘 시장의 바람",
+      "group": "daily",
+      "url": "/seoks/?tab=wind",
+      "schedule": {
+        "days": [
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "time": "06:20"
+      },
+      "accent": "#5fd3b0",
+      "source": {
+        "type": "seoks-wind",
+        "wind": "/seoks/data/wind.json",
+        "latest": "/seoks/data/latest.json",
+        "comment": "/seoks/data/comments/{date}.json"
+      },
+      "cover": {
+        "style": "wind"
+      }
+    },
+    {
+      "id": "bios",
+      "name": "바이오스",
+      "kind": "주간 매거진",
+      "desc": "생명과학·IT 주간 웹 매거진",
+      "group": "weekly",
+      "url": "/bios/",
+      "schedule": {
+        "days": [
+          5
+        ],
+        "time": "19:00"
+      },
+      "accent": "#7cc4e8",
+      "source": {
+        "type": "index",
+        "index": "/bios/issues/index.json",
+        "list": "",
+        "label": "{label}",
+        "title": "{title}",
+        "cover": "/bios/img/{date}/cover.webp"
+      },
+      "cover": {
+        "style": "overlay",
+        "mast": "BIOS",
+        "sub": "바이오스 · 생명과학·IT 주간"
+      }
+    },
+    {
+      "id": "nova",
+      "name": "Nova",
+      "kind": "어린이 과학 신문",
+      "desc": "서아가 기획한 주간 과학 교양지",
+      "group": "weekly",
+      "url": "/nova/",
+      "schedule": {
+        "days": [
+          5
+        ],
+        "time": "22:00"
+      },
+      "accent": "#d6452f",
+      "source": {
+        "type": "index",
+        "index": "/nova/editions/index.json",
+        "list": "issues",
+        "publishAt": "publishAt",
+        "label": "{label}",
+        "detail": "/nova/editions/{file}",
+        "title": "{d.cover.headline}",
+        "svg": "d.figs.cover"
+      },
+      "cover": {
+        "style": "paper",
+        "mast": "Nova",
+        "sub": "서아가 기획한 주간 과학 교양지"
+      }
+    },
+    {
+      "id": "question",
+      "name": "Seok's Question",
+      "kind": "질문 보고서",
+      "desc": "질문 하나를 여러 학문의 눈으로 파고드는 보고서",
+      "group": "irregular",
+      "url": "/question/",
+      "accent": "#1f4fd8",
+      "statusText": "지금까지 질문 {count}개",
+      "emptyText": "첫 질문을 기다리는 중",
+      "source": {
+        "type": "index",
+        "index": "/question/data/index.json",
+        "list": "questions",
+        "label": "Q{no|pad2}",
+        "title": "{title}",
+        "chip": "{cat.name}",
+        "link": "/question/#/t/{id}",
+        "lookup": {
+          "cat": {
+            "list": "categories",
+            "key": "id",
+            "field": "category"
+          }
+        }
+      },
+      "cover": {
+        "style": "type",
+        "mast": "Seok's Question",
+        "sub": "하나의 질문을 여러 학문의 눈으로",
+        "empty": "첫 질문을 기다리는 중"
+      }
+    },
+    {
+      "id": "gugutop",
+      "name": "구구탑",
+      "kind": "가족 게임",
+      "desc": "가족이 함께 한 층씩 오르는 탑 모험 게임",
+      "group": "always",
+      "url": "http://3.34.169.45/",
+      "accent": "#8a5cf0",
+      "source": {
+        "type": "static",
+        "label": "입장 암호 필요",
+        "title": "우리 가족 99층 탑 모험",
+        "cover": "assets/gugutop-cover.jpg",
+        "icon": "assets/gugutop-icon.png"
+      },
+      "statusText": "언제든 들어갈 수 있어요",
+      "cover": {
+        "style": "overlay",
+        "mast": "구구탑",
+        "sub": "가족 모험 RPG"
+      }
+    }
+  ]
+}

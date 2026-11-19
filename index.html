@@ -2,14 +2,201 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Seoks 증시현황판</title>
-<meta http-equiv="refresh" content="0; url=/seoks/">
-<link rel="canonical" href="https://hangseokemail-spec.github.io/seoks/">
-<script>location.replace("/seoks/" + location.search + location.hash);</script>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>석스 가판대</title>
+<meta name="description" content="석스가 만든 신문·현황판·매거진·게임을 한곳에서">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#f5f5f7">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23f5f5f7'/%3E%3Crect x='12' y='12' width='24' height='32' rx='4' fill='%23e8a33d'/%3E%3Crect x='28' y='20' width='24' height='32' rx='4' fill='%230071e3'/%3E%3C/svg%3E">
+<script>
+  // 예전 주소(…github.io/?tab=wind)로 들어오면 증시현황판으로 보낸다.
+  if (/[?&]tab=/.test(location.search)) location.replace('/seoks/' + location.search + location.hash);
+</script>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@900&display=swap">
+<style>
+:root{
+  --bg:#f5f5f7; --ink:#1d1d1f; --mute:#6e6e73; --soft:#86868b; --hair:#e8e8ed;
+  --blue:#0071e3; --link:#0066cc; --new:#bf4800;
+  --sans:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+  --didone:"Playfair Display","Pretendard Variable",Pretendard,serif;
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:70px}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.47;letter-spacing:-.011em;
+  word-break:keep-all;-webkit-font-smoothing:antialiased}
+button{font:inherit}
+
+/* 위쪽 막대 */
+.gnav{position:sticky;top:0;z-index:50;background:rgba(245,245,247,.78);
+  -webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(0,0,0,.06)}
+.gnav .in{max-width:1080px;height:52px;margin:0 auto;padding:0 22px;display:flex;align-items:center;gap:30px}
+.brand{font-size:17px;font-weight:700;letter-spacing:-.02em;color:var(--ink);text-decoration:none}
+.links{flex:1;display:flex;gap:24px}
+.links a{font-size:13px;color:#424245;text-decoration:none;transition:color .2s}
+.links a:hover{color:var(--ink)}
+.pill{margin-left:auto;display:flex;align-items:center;gap:7px;padding:6px 13px 6px 11px;border:0;border-radius:980px;background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;transition:transform .2s var(--ease)}
+.pill:hover{transform:scale(1.04)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--blue)}
+.pill b{color:var(--blue)}
+
+/* 첫 화면 */
+.hero{max-width:880px;margin:0 auto;padding:76px 22px 12px;text-align:center}
+.eyebrow{margin:0;font-size:17px;font-weight:600;color:var(--mute)}
+.hero h1{margin:12px 0 0;font-size:clamp(44px,8vw,80px);font-weight:800;line-height:1.05;letter-spacing:-.04em;
+  background:linear-gradient(92deg,#d9822b 0%,#e0503d 28%,#9b4fe8 58%,#2f7fe8 88%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  padding-bottom:.08em}
+.hero .sub{text-wrap:balance;max-width:640px;margin:18px auto 0;font-size:clamp(19px,2.4vw,23px);font-weight:500;line-height:1.42;color:var(--mute)}
+.hero .note{margin:26px 0 0;font-size:17px;color:var(--ink)}
+.hero .note b{color:var(--blue)}
+.textbtn{padding:0;margin-left:6px;border:0;background:none;color:var(--link);cursor:pointer}
+.textbtn:hover{text-decoration:underline}
+
+/* 선반 */
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+.shelves{display:flex;flex-wrap:wrap;column-gap:44px}
+.shelf{--cw:236px;--gap:22px;flex:0 1 calc(var(--n) * (var(--cw) + var(--gap)) - var(--gap));max-width:100%;padding-top:60px}
+.shelf h2{margin:0 0 22px;font-size:clamp(22px,2.6vw,28px);font-weight:600;line-height:1.25;letter-spacing:-.025em;color:var(--soft);text-wrap:balance}
+.shelf h2 b{color:var(--ink);font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,var(--cw));gap:30px var(--gap)}
+
+/* 카드 */
+.card{display:flex;flex-direction:column;min-width:0;padding:20px 20px 18px;border-radius:26px;background:#fff;color:inherit;text-decoration:none;
+  box-shadow:0 2px 14px rgba(0,0,0,.04);transition:transform .45s var(--ease),box-shadow .45s var(--ease);outline:none}
+.card:hover,.card:focus-visible{transform:translateY(-6px);box-shadow:0 22px 44px rgba(0,0,0,.12)}
+.card:focus-visible{box-shadow:0 0 0 3px rgba(0,113,227,.5),0 22px 44px rgba(0,0,0,.12)}
+.card:active{transform:translateY(-2px) scale(.99)}
+.cvwrap{position:relative}
+.cv{position:relative;aspect-ratio:3/4;overflow:hidden;border-radius:12px;background:#ececf0;container-type:inline-size;
+  box-shadow:0 14px 26px -12px rgba(0,0,0,.38),0 2px 6px rgba(0,0,0,.08);transition:transform .45s var(--ease)}
+.card:hover .cv{transform:scale(1.015)}
+.cv .full{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+
+/* 안 읽음 점 */
+.ud{position:absolute;top:-7px;right:-7px;z-index:6;width:20px;height:20px;border-radius:50%;background:var(--blue);border:3.5px solid #fff;
+  box-shadow:0 2px 8px rgba(0,113,227,.45);transform:scale(0);transition:transform .35s var(--ease)}
+.card.unread .ud{transform:scale(1);animation:glow 2.6s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 2px 8px rgba(0,113,227,.45),0 0 0 0 rgba(0,113,227,.35)}50%{box-shadow:0 2px 8px rgba(0,113,227,.45),0 0 0 8px rgba(0,113,227,0)}}
+
+.meta{padding:18px 2px 0;display:flex;flex-direction:column;flex:1}
+.r0{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-height:17px;margin-bottom:3px;font-size:12px}
+.eb{font-weight:600;color:var(--soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eb.new{color:var(--new)}
+.eb.seen::before{content:"✓";display:inline-block;margin-right:5px;color:#34c759;font-weight:800}
+.cad{flex:none;color:var(--soft)}
+.name{display:block;font-size:21px;font-weight:700;letter-spacing:-.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r2{margin-top:2px;font-size:14px;color:var(--mute)}
+.ttl{margin:10px 0 0;font-size:15px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ttl.desc{color:var(--mute)}
+.ttl{margin-bottom:14px}
+.st{margin-top:auto;padding-top:12px;border-top:1px solid #f0f0f2;display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--soft)}
+.dot{flex:none;width:7px;height:7px;border-radius:50%;background:#c7c7cc}
+.st.ok .dot{background:#34c759}.st.wait .dot{background:#ff9f0a}.st.late .dot{background:#ff3b30}.st.late{color:#d70015}
+
+/* 불러오는 중 */
+.cv-loading{background:linear-gradient(100deg,#ececf0 30%,#f7f7f9 50%,#ececf0 70%);background-size:300% 100%;animation:shim 1.3s linear infinite}
+@keyframes shim{from{background-position:100% 0}to{background-position:0 0}}
+
+/* 표지: 그림 위에 제호 */
+.cv-overlay .top{position:absolute;inset:0 0 auto;z-index:2;display:flex;align-items:center;gap:3.5cqw;padding:7cqw 7cqw 20cqw;
+  background:linear-gradient(rgba(5,8,20,.6),rgba(5,8,20,0))}
+.cv-overlay .icon{flex:none;width:15cqw;height:15cqw;border-radius:3.6cqw;box-shadow:0 1cqw 3cqw rgba(0,0,0,.35)}
+.cv-overlay .mast{font-family:var(--didone);font-weight:900;font-size:17cqw;line-height:.95;letter-spacing:.02em;color:#fff;text-shadow:0 1cqw 4cqw rgba(0,0,0,.35)}
+.cv-overlay .sub{margin-top:2.2cqw;font-size:4.4cqw;color:rgba(255,255,255,.9)}
+.cv-overlay .bot{position:absolute;inset:auto 0 0;z-index:2;padding:24cqw 7cqw 7.5cqw;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.8))}
+.cv-overlay .lab{margin-bottom:1.6cqw;font-size:4.5cqw;font-weight:700;color:var(--ac)}
+.cv-overlay .hd{font-size:7.6cqw;font-weight:800;line-height:1.28;color:#fff;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+
+/* 표지: 종이 신문 */
+.cv-paper{display:flex;flex-direction:column;padding:5.5% 6% 6%;background:#f4efe4;color:#17140f}
+.cv-paper .pt{display:flex;justify-content:space-between;padding-bottom:1.8cqw;border-bottom:.6cqw solid #17140f;font-size:3.9cqw;font-weight:600}
+.cv-paper .pm{margin-top:2.6cqw;text-align:center;font-family:var(--didone);font-weight:900;font-size:25cqw;line-height:1;letter-spacing:-.02em}
+.cv-paper .ps{margin:1.4cqw 0 3.4cqw;text-align:center;font-size:3.8cqw;color:#5f584b}
+.cv-paper .pa{position:relative;flex:1;min-height:0;overflow:hidden;background:#0d1b33}
+.cv-paper .pa svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.cv-paper .ph{margin-top:3.4cqw;font-size:6.2cqw;font-weight:800;line-height:1.3;letter-spacing:-.02em;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+
+/* 표지: 계기판 */
+.cv-wind svg{position:absolute;inset:0;width:100%;height:100%;display:block;font-family:var(--sans)}
+
+/* 표지: 글자로만 (질문) */
+.cv-type{display:flex;flex-direction:column;padding:7%;color:#fff;background:radial-gradient(120% 80% at 100% 0%,#24396f 0%,#111827 60%)}
+.ty-mast{font-family:var(--didone);font-weight:900;font-size:8.6cqw;letter-spacing:.01em}
+.ty-q{position:absolute;right:-6cqw;top:6cqw;font-family:var(--didone);font-weight:900;font-size:92cqw;line-height:1;color:#7c9cf5;opacity:.16;pointer-events:none}
+.ty-body{position:relative;margin-top:auto}
+.ty-no{font-variant-numeric:lining-nums;font-family:var(--didone);font-weight:900;font-size:21cqw;line-height:1;color:#a9bef9;letter-spacing:-.01em}
+.ty-chip{display:inline-block;margin-top:3cqw;padding:.8cqw 2.6cqw;border-radius:2cqw;background:#fff1b8;color:#111827;font-size:4.2cqw;font-weight:700}
+.ty-title{margin-top:3.4cqw;font-size:7.6cqw;font-weight:800;line-height:1.3;letter-spacing:-.02em;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.ty-sub{position:relative;margin-top:4cqw;padding-top:3cqw;border-top:1px solid rgba(255,255,255,.18);font-size:4.2cqw;color:rgba(255,255,255,.7)}
+
+/* 표지: 그림이 없을 때 */
+.cv-fb{display:flex;flex-direction:column;justify-content:flex-end;padding:8%;
+  background:linear-gradient(160deg,color-mix(in srgb,var(--ac) 80%,#fff) 0%,color-mix(in srgb,var(--ac) 55%,#000) 100%)}
+.fb-kind{font-size:4.6cqw;color:rgba(255,255,255,.8)}
+.fb-name{margin-top:1.5cqw;font-family:var(--didone);font-weight:900;font-size:13cqw;line-height:1.05;color:#fff}
+.fb-title{margin-top:4cqw;font-size:5.4cqw;line-height:1.4;color:rgba(255,255,255,.92);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+
+.oops{padding:40px 0;color:var(--mute);text-align:center}
+footer{max-width:1080px;margin:72px auto 0;padding:18px 22px 40px;border-top:1px solid #d2d2d7;display:flex;justify-content:space-between;gap:6px 20px;flex-wrap:wrap;
+  font-size:12px;color:var(--soft)}
+footer a{color:#424245}
+
+@media (max-width:600px){
+  .gnav .in{gap:16px}
+  .links{display:none}
+  .hero{padding:46px 20px 4px}
+  .eyebrow{font-size:15px}
+  .hero .note{font-size:15px}
+  .shelf{padding-top:44px}
+  .shelf h2{margin-bottom:16px}
+  .wrap{padding:0 14px}
+  .shelves{column-gap:12px}
+  .shelf{flex:1 1 100%}
+  .shelf.n1{flex:1 1 calc(50% - 6px);min-width:0}
+  .shelf.n1 .grid{grid-template-columns:1fr}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(calc(50% - 6px),1fr));gap:22px 12px}
+  .card{padding:10px 10px 14px;border-radius:20px}
+  .cv{border-radius:9px}
+  .ud{width:16px;height:16px;top:-5px;right:-5px;border-width:3px}
+  .meta{padding:12px 3px 0}
+  .r0{font-size:11px;min-height:15px}
+  .name{font-size:16px}
+  .cad{display:none}
+  .r2{font-size:12px}
+  .ttl{font-size:13px;margin-top:6px}
+  .ttl{margin-bottom:10px}
+  .st{font-size:11px;padding-top:9px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
 </head>
-<body style="background:#16264a;color:#f5f8ff;font-family:sans-serif;text-align:center;padding-top:30vh">
-<p>Seoks 증시현황판으로 이동합니다…</p>
-<p><a href="/seoks/" style="color:#f5cf6a">바로 가기</a></p>
+<body>
+<nav class="gnav" aria-label="가판대 메뉴">
+  <div class="in">
+    <a class="brand" id="brand" href="./">석스 가판대</a>
+    <div class="links" id="navlinks"></div>
+    <button class="pill" id="unread" type="button" hidden><i></i>안 본 것 <b id="unread-n">0</b></button>
+  </div>
+</nav>
+
+<header class="hero">
+  <p class="eyebrow" id="eyebrow">&nbsp;</p>
+  <h1 id="headline">석스가 만든 것들.</h1>
+  <p class="sub" id="subtitle">신문, 현황판, 매거진, 그리고 게임까지. 새 호가 나오면 여기에 바로 올라와요.</p>
+  <p class="note"><span id="hero-note">불러오는 중…</span><button class="textbtn" id="allread" type="button" hidden>모두 봤어요로 표시 ›</button></p>
+</header>
+
+<main class="wrap shelves" id="main"></main>
+
+<footer>
+  <span>파란 점은 아직 안 연 새 호예요. 이 기기에서 가판대를 거쳐 연 것만 기억해요. <a href="#" id="forget">읽음 기록 지우기</a></span>
+  <span id="checked"></span>
+</footer>
+<script src="hub.js" defer></script>
 </body>
 </html>
