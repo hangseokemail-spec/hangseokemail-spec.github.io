@@ -53,7 +53,12 @@
         "label": "제{issue}호",
         "title": "{lead}",
         "cut": " — ",
-        "cover": "/news/data/covers/{date}.jpg"
+        "cover": "/news/data/covers/{date}.jpg",
+        "summary": [
+          "{summary}",
+          "{lead}"
+        ],
+        "summaryAfter": " — "
       },
       "cover": {
         "style": "plain"
@@ -107,7 +112,15 @@
         "list": "",
         "label": "{label}",
         "title": "{title}",
-        "cover": "/bios/img/{date}/cover.webp"
+        "cover": "/bios/img/{date}/cover.webp",
+        "summary": [
+          "{summary}"
+        ],
+        "summaryHtml": {
+          "url": "/bios/{file}",
+          "selector": ".cover-main p"
+        },
+        "sentences": 2
       },
       "cover": {
         "style": "overlay",
@@ -137,7 +150,11 @@
         "label": "{label}",
         "detail": "/nova/editions/{file}",
         "title": "{d.cover.headline}",
-        "svg": "d.figs.cover"
+        "svg": "d.figs.cover",
+        "summary": [
+          "{summary}",
+          "{d.cover.lead.0}"
+        ]
       },
       "cover": {
         "style": "paper",
@@ -169,7 +186,11 @@
             "key": "id",
             "field": "category"
           }
-        }
+        },
+        "summary": [
+          "{summary}",
+          "{answer}"
+        ]
       },
       "cover": {
         "style": "type",
@@ -191,7 +212,8 @@
         "label": "입장 암호 필요",
         "title": "우리 가족 99층 탑 모험",
         "cover": "assets/gugutop-cover.jpg",
-        "icon": "assets/gugutop-icon.png"
+        "icon": "assets/gugutop-icon.png",
+        "summary": "가족이 함께 한 층씩 오르는 탑 모험 게임"
       },
       "statusText": "언제든 들어갈 수 있어요",
       "cover": {

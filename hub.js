@@ -25,6 +25,29 @@
     return r.json();
   };
   const $ = (s, el = document) => el.querySelector(s);
+  // 여러 후보 중 처음으로 값이 있는 것
+  const pick = (t, ctx) => (Array.isArray(t) ? t : [t]).map((x) => fill(x, ctx)).find((v) => v && String(v).trim()) || '';
+  // 앞에서 n문장만 (0이면 전부). 5.12% 같은 소수점은 문장 끝으로 보지 않는다.
+  const sentences = (t, n) => {
+    t = String(t || '').replace(/\s+/g, ' ').trim();
+    if (!n) return t;
+    const re = /[.!?](?=\s|$)/g; let m, c = 0;
+    while ((m = re.exec(t))) if (++c === n) return t.slice(0, m.index + 1);
+    return t;
+  };
+  async function summaryOf(s, ctx) {
+    let t = s.summary ? pick(s.summary, ctx) : '';
+    if (!t && s.summaryHtml) {
+      try {
+        const r = await fetch(abs(fill(s.summaryHtml.url, ctx)), { cache: 'no-cache' });
+        const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+        const el = doc.querySelector(s.summaryHtml.selector);
+        t = el ? el.textContent : '';
+      } catch (err) { t = ''; }
+    }
+    if (s.summaryAfter && t.includes(s.summaryAfter)) t = t.split(s.summaryAfter).slice(1).join(s.summaryAfter);
+    return sentences(t, s.sentences == null ? 1 : s.sentences);
+  }
 
   /* ---------- 한국 시각 ---------- */
   const dayKey = (t) => new Date(t + KST).toISOString().slice(0, 10);
@@ -84,13 +107,14 @@
         ctx[name] = Array.isArray(arr) ? arr.find((x) => x && x[L.key || 'id'] === e[L.field]) || {} : {};
       });
       if (s.detail) { try { ctx.d = await getJSON(fill(s.detail, ctx)); } catch (err) { ctx.d = {}; } }
-      let title = fill(s.title, ctx) || '';
+      let title = pick(s.title, ctx);
       if (s.cut && title.includes(s.cut)) title = title.split(s.cut)[0];
+      const summary = await summaryOf(s, ctx);
       const date = String(e[dk]).slice(0, 10);
       const label = fill(s.label, ctx);
       return {
         key: date + '|' + (label || ''),
-        date, label, title,
+        date, label, title, summary,
         cover: s.cover ? abs(fill(s.cover, ctx)) : null,
         svg: s.svg ? get(ctx, s.svg) : null,
         chip: s.chip ? fill(s.chip, ctx) : null,
@@ -120,6 +144,7 @@
         label: `미국 ${mm}/${dd} 마감`,
         dateText: '',
         title: wc.verdict || wc.headline || [zone.name, zone.act].filter(Boolean).join(' · '),
+        summary: (c && (c.oneliner || (c.market && c.market.headline))) || wc.headline || '',
         publishedAt: g ? at(g[1], g[2]) : null,
         wind: { score, zone, zones: w.zones || [], spark: w.w.slice(Math.max(0, i - 59), i + 1).map(Number) },
       };
@@ -127,7 +152,7 @@
 
     // 발행 주기가 없는 것(게임·도구): 적어 둔 그대로.
     async static(s) {
-      return { key: null, label: s.label, title: s.title, cover: s.cover ? abs(s.cover) : null, icon: s.icon ? abs(s.icon) : null };
+      return { key: null, label: s.label, title: s.title, summary: s.summary || '', cover: s.cover ? abs(s.cover) : null, icon: s.icon ? abs(s.icon) : null };
     },
 
     // 앞으로 만드는 프로그램용 표준: 저장소에 hub.json 하나만 두면 된다(README 참고).
@@ -135,7 +160,7 @@
       const d = await getJSON(s.feed);
       const base = new URL(abs(s.feed), location.href);
       const rel = (u) => (u ? new URL(u, base).href : null);
-      return { key: d.key || d.date, date: d.date, label: d.label, title: d.title, cover: rel(d.cover), link: rel(d.link), publishedAt: d.publishedAt ? Date.parse(d.publishedAt) : null };
+      return { key: d.key || d.date, date: d.date, label: d.label, title: d.title, summary: d.summary || '', cover: rel(d.cover), link: rel(d.link), publishedAt: d.publishedAt ? Date.parse(d.publishedAt) : null };
     },
   };
 
@@ -290,7 +315,9 @@
         <div class="r0"><span class="eb"></span><span class="cad">${esc(cadText(p))}</span></div>
         <b class="name">${esc(p.name)}</b>
         <div class="r2">${esc(p.kind || '')}</div>
-        <p class="ttl">${esc(p.desc || '')}</p>
+        <p class="hl" hidden></p>
+        <p class="sm">${esc(p.desc || '')}</p>
+        <i class="gap"></i>
         <div class="st"><i class="dot"></i><span>불러오는 중</span></div>
       </div>`;
     const mark = () => { markSeen([p.id]); paintRead(); };
@@ -307,9 +334,12 @@
     $('.cv', a).replaceWith(buildCover(p, it));
     const dateText = it.dateText != null ? it.dateText : it.date ? fmtDay(it.date) : '';
     $('.r2', a).textContent = it.empty ? `${p.kind || ''} · 아직 발행 전` : [it.label, dateText].filter(Boolean).join(' · ') || p.kind || '';
-    const ttl = $('.ttl', a);
-    if (coverShowsTitle(p) || !it.title) { ttl.textContent = p.desc || ''; ttl.classList.add('desc'); }
-    else { ttl.textContent = it.title; ttl.classList.remove('desc'); }
+    const hl = $('.hl', a), sm = $('.sm', a);
+    hl.textContent = it.title || '';
+    hl.hidden = !it.title;
+    hl.classList.toggle('dup', coverShowsTitle(p)); // 표지에 이미 제목이 있으면 큰 화면에선 숨김
+    sm.textContent = it.summary || ((it.empty || !it.title) ? p.desc || '' : '');
+    sm.hidden = !sm.textContent;
     const s = statusOf(p, it, now);
     $('.st', a).className = 'st ' + s.cls;
     $('.st span', a).textContent = s.text;
@@ -321,6 +351,9 @@
     if (!a) return;
     state.items[p.id] = { key: null, failed: true };
     $('.cv', a).replaceWith(buildCover({ ...p, cover: { style: 'plain' } }, { title: p.desc }));
+    $('.hl', a).hidden = true;
+    $('.sm', a).textContent = p.desc || '';
+    $('.sm', a).hidden = false;
     $('.st', a).className = 'st err';
     $('.st span', a).textContent = '목록을 읽지 못했어요 · 눌러서 바로 가기';
     console.warn('[가판대]', p.id, err);

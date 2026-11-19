@@ -12,6 +12,10 @@ https://hangseokemail-spec.github.io/ — 석스가 만든 것들을 한 화면�
 이 페이지는 열릴 때마다 각 프로그램의 목록 파일(`/news/data/index.json`, `/bios/issues/index.json` …)을 직접 읽습니다.
 새 호가 올라가면 그 목록이 바뀌므로 가판대는 따로 고칠 필요가 없습니다. GitHub Pages 캐시 때문에 최대 10분쯤 늦을 수 있고, 켜 둔 화면은 20분마다 다시 읽습니다.
 
+## 화면 배치
+
+PC·태블릿 가로는 표지를 크게 세운 카드, 태블릿 세로·휴대폰 가로는 표지 왼쪽·요약 오른쪽 카드 두 줄, 휴대폰 세로는 한 줄 목록으로 바뀝니다.
+
 ## 읽음 표시
 
 카드를 누르면 그 기기 브라우저에 "어느 호까지 눌러 봤는지"를 적어 둡니다(localStorage, 서버로 보내지 않음).
@@ -49,6 +53,8 @@ https://hangseokemail-spec.github.io/ — 석스가 만든 것들을 한 화면�
 - `schedule.days`: 0=일 … 6=토, `time`: 한국 시각. 다음 호 안내와 "예정보다 늦어지고 있어요" 표시에 씁니다. 비정기면 빼고 `statusText`를 씁니다.
 - `list`: 목록 배열이 있는 자리(배열이 파일 맨 위면 `""`). 각 항목에 `date`(YYYY-MM-DD)가 있어야 합니다.
 - `label`·`title`·`cover`·`link`: `{필드}` 자리에 그 호의 값이 들어갑니다. `{no|pad2}`는 두 자리(01)로 채웁니다.
+- `summary`: 카드에 넣을 핵심 한 문장. 후보를 여러 개 적으면 처음으로 값이 있는 것을 씁니다(예: `["{summary}", "{lead}"]`). `summaryAfter`는 그 글자 뒤만, `sentences`는 앞에서 몇 문장(기본 1, 0이면 전부), `summaryHtml`은 호별 HTML에서 `selector`로 뽑습니다.
+  **발행할 때 목록 JSON의 각 호에 `summary`(핵심 한 문장)를 같이 적어 두면 그 문장이 그대로 카드에 실립니다.**
 - `publishAt`: 미리 올려 두고 정해진 시각에 공개하는 경우 그 필드 이름.
 - `detail`: 표지 정보가 호별 파일 안에 있을 때 그 파일 주소. 그 안의 값은 `{d.필드}`로 씁니다.
 - `cover.style`: `plain`(표지 그림 그대로) · `overlay`(그림 위에 `mast` 제호와 제목) · `paper`(종이 신문, SVG 그림) · `type`(글자만) · `wind`(풍향계 전용).
@@ -58,7 +64,7 @@ https://hangseokemail-spec.github.io/ — 석스가 만든 것들을 한 화면�
 저장소에 아래 파일을 두고 발행할 때마다 갱신하면, `"source": { "type": "hub", "feed": "/새이름/hub.json" }`로 연결됩니다.
 
 ```json
-{ "date": "2026-11-20", "label": "제3호", "title": "이번 호 제목", "cover": "img/2026-11-20/cover.jpg", "publishedAt": "2026-11-20T19:00:00+09:00" }
+{ "date": "2026-11-20", "label": "제3호", "title": "이번 호 제목", "summary": "핵심 한 문장", "cover": "img/2026-11-20/cover.jpg", "publishedAt": "2026-11-20T19:00:00+09:00" }
 ```
 
 `cover`·`link`는 hub.json 위치 기준 상대 주소도 됩니다.
