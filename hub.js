@@ -598,6 +598,7 @@
     empty.hidden = shown > 0;
     empty.textContent = id === 'new' ? '새로 나온 건 모두 봤어요. 다음 호를 기다리는 중이에요.' : '아직 여기에 놓인 것이 없어요.';
     paintTabNote();
+    try { sessionStorage.setItem(TABSTORE, id); } catch (err) { /* 무시 */ }
     if (byUser) {
       try { localStorage.setItem(TABSTORE, id); } catch (err) { /* 저장 못 해도 그만 */ }
       try { history.replaceState(null, '', '#' + id); } catch (err) { /* 무시 */ }
@@ -650,13 +651,22 @@
     const fromHash = decodeURIComponent(location.hash.slice(1));
     const asked = state.tabs.some((t) => t.id === fromHash) ? fromHash : null;
     let saved = null; try { saved = localStorage.getItem(TABSTORE); } catch (err) { saved = null; }
-    showTab(asked || 'new');
+    let comeback = null;
+    try { const r = document.referrer ? new URL(document.referrer) : null; if (r && r.origin === location.origin && !/^\/(index\.html)?$/.test(r.pathname)) comeback = sessionStorage.getItem(TABSTORE); } catch (err) { comeback = null; }
+    showTab(asked || (state.tabs.some((t) => t.id === comeback) ? comeback : 'new'));
     $('#forget').addEventListener('click', (e) => { e.preventDefault(); try { localStorage.removeItem(STORE); } catch (err) { /* 무시 */ } paintRead(); });
     await refresh();
     state.ready = true;
     // 주소에 탭이 없으면: 안 본 새 호가 있을 때 '새로 나온 것', 없으면 지난번에 본 탭(없으면 첫 분류)
     const fallback = saved && saved !== 'new' && state.tabs.some((t) => t.id === saved) ? saved : state.tabs[1].id;
-    showTab(asked || (state.unread ? 'new' : fallback));
+    // 프로그램을 보다가 '가판대' 단추로 돌아왔으면, 떠날 때 보던 탭 그대로
+    let back = null;
+    try {
+      const r = document.referrer ? new URL(document.referrer) : null;
+      if (r && r.origin === location.origin && !/^\/(index\.html)?$/.test(r.pathname)) back = sessionStorage.getItem(TABSTORE);
+    } catch (err) { back = null; }
+    if (back && !state.tabs.some((t) => t.id === back)) back = null;
+    showTab(asked || back || (state.unread ? 'new' : fallback));
     window.addEventListener('hashchange', () => { const h = decodeURIComponent(location.hash.slice(1)); if (state.tabs.some((t) => t.id === h)) showTab(h); });
     setInterval(() => { if (!document.hidden) refresh(); }, REFRESH);
     document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - state.last > 5 * 60e3) refresh(); });

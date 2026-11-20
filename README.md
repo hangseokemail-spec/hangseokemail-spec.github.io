@@ -97,6 +97,18 @@ PC·태블릿 가로는 표지를 크게 세운 카드, 태블릿 세로·휴대
 
 표지 그림을 `assets/`에 넣고 `"source": { "type": "static", "label": "…", "title": "…", "cover": "assets/그림.jpg" }`.
 
+## 가판대로 돌아가는 단추 (home.js)
+
+각 프로그램 화면 왼쪽 아래에 '가판대' 단추가 떠 있습니다. 각 사이트의 index.html 맨 끝에 다음 한 줄이 들어 있고, 모양·동작은 이 저장소의 `home.js` 하나만 고치면 모든 사이트에 함께 바뀝니다.
+
+```html
+<script src="https://hangseokemail-spec.github.io/home.js" defer></script>
+```
+
+- 아래로 읽어 내려가면 숨고, 조금이라도 올리면 다시 나옵니다. 누르면 가판대로 오고, 떠날 때 보던 탭이 그대로 열립니다.
+- 자리는 `data-pos`(bottom-left·bottom-right·top-left·top-right), 아래쪽 단추와 겹치면 `data-lift="60"`처럼 올립니다(Nova는 60).
+- 새 프로그램을 만들 때도 index.html 끝에 이 한 줄을 넣습니다.
+
 ## 예전 주소
 
 예전처럼 `https://hangseokemail-spec.github.io/?tab=wind`로 들어오면 증시현황판(`/seoks/`)으로 넘어갑니다.
