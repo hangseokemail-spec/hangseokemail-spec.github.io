@@ -13,7 +13,7 @@ const PRESETS = [
 
 function newPlan(name = '내 노후 계획', mode = 'retire') {
   return {
-    id: `p${Date.now().toString(36)}`, name, mode, startedAt: new Date().toISOString().slice(0, 10),
+    id: `p${Date.now().toString(36)}`, name, mode, startedAt: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
     age: 45, retireAge: 60, endAge: 90, inflation: 2.5,
     initial: 100000000, monthly: 1500000, monthlyGrowth: 0, saveUntilAge: null,
     accSegs: [{ from: 1, to: 5, rate: 3 }, { from: 6, to: 8, rate: 5 }, { from: 9, to: null, rate: 7 }],

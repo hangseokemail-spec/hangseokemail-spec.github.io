@@ -40,7 +40,7 @@ async function main() {
     const last = u.items.find((x) => x.k === 'SPY')?.e;
     const kr = u.items.find((x) => x.k === '069500')?.e;
     const f = (n) => (n ? `${String(n).slice(4, 6)}.${String(n).slice(6, 8)}` : '–');
-    $('#dataStamp').textContent = `시세 미국 ${f(last)} · 국내 ${f(kr)} 종가`;
+    $('#dataStamp').innerHTML = `<span class="long">시세 미국 </span>${f(last)}<span class="long"> · 국내 ${f(kr)}</span> 종가`;
     $('#dataStamp').onclick = openDataStatus;
   } catch (e) {
     $('#dataStamp').textContent = '시세를 못 불러왔어요';

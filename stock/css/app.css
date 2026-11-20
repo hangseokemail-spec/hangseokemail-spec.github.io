@@ -375,3 +375,12 @@ input[type="month"], input[type="date"] { min-width: 0; }
 .bt-input .grid2.months { grid-template-columns: 1fr 1fr; }
 .bt-input .grid2.months .input { padding: 8px 6px; font-size: 14px; }
 .legend button i { flex: none; }
+@media (max-width: 640px) {
+  .app-header { gap: var(--sp-2); padding: 0 var(--sp-2) 0 var(--sp-3); }
+  .data-stamp .long { display: none; }
+  .header-right { gap: 0; }
+  .back-hub { font-size: 12px; }
+  .row > .btn { flex: 0 1 auto; }
+}
+@media (max-width: 1024px) { .plan-layout > .result { order: -1; } }
+.timeline .tseg { font-size: 11px; }
