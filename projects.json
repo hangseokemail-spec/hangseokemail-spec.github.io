@@ -220,6 +220,28 @@
       "summaryTone": "한다체"
     },
     {
+      "id": "stock",
+      "name": "Seok's Stock",
+      "kind": "투자 도구",
+      "desc": "백테스트 · 목표·노후 설계 · 내 자산 관리",
+      "group": "always",
+      "tab": "market",
+      "url": "/stock/",
+      "accent": "#2BB3A3",
+      "source": {
+        "type": "static",
+        "label": "언제든",
+        "title": "말로 쓰는 백테스트와 노후 설계",
+        "summary": "‘최근 3년 시총 1~3위를 매달 리밸런싱’처럼 말로 조건을 쓰면 백테스트하고, 목표·노후 자금과 내 자산의 위험을 구체적인 대안과 함께 보여준다."
+      },
+      "statusText": "언제든 열려 있어요",
+      "cover": {
+        "style": "type",
+        "mast": "Seok's Stock",
+        "sub": "백테스트 · 목표·노후 · 내 자산"
+      }
+    },
+    {
       "id": "question",
       "name": "Seok's Question",
       "kind": "질문 보고서",
