@@ -35,7 +35,7 @@ FRAMES = [  # 같은 문장 틀 되풀이
 ]
 
 def sentences(line):
-    return [s for s in re.split(r'(?<=[.?!])\s+', line) if s.strip()]
+    return [s for s in re.split(r'(?<=[.?!])\s+', line.replace('**', '')) if s.strip()]
 
 def main(paths):
     total = 0
