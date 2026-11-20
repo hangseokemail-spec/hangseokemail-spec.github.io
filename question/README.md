@@ -16,3 +16,10 @@
 1. `data/q/qNN.md`에 보고서를 넣는다.
 2. `data/index.json`의 `questions`에 항목을 더한다. 새 분류가 필요하면 `categories`에 더한다.
 3. 원본은 구글 드라이브 `AI/Seok's Question DB` 폴더의 시트와 문서에 함께 보관한다.
+
+## 도구 (`tools/`)
+작업 순서와 규칙은 claude.ai 프로젝트 문서 '석스 질문 작업 지침'과 '석스 질문 세부 작업지침'에 있어요.
+- `publish_q.py`: answer.md·body.md를 `data/q/qNN.md`와 `data/index.json`에 넣어요.
+- `make_drive_md.py`, `md2drive.py`: 드라이브 문서용 마크다운과 HTML을 만들어요.
+- `lint_text.py`: 지적받았던 문장 버릇(‘○○의 눈은’, ‘가운데 주제’, 새 말 만들기 등)을 찾아요.
+- `check_site.py`: 로컬에서 PC·휴대폰 화면과 오류를 확인해요.
