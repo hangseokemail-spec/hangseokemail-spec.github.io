@@ -968,3 +968,96 @@ label.field > .when-tag { justify-self: start; }
 .mc-facts { margin-bottom: var(--sp-3); }
 .mc-facts .v.down { color: var(--down); }
 .status-pill.bad { background: var(--st-bad-bg); color: var(--st-bad); }
+
+/* 2026-11-21 저녁: 목표 탭 대안 비교 */
+.gc-alt { gap: 6px 8px; }
+.gc-altq { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gc-alt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface)); }
+.gc-altbtns { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.gc-cmpbtn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--bg-selected); }
+.gpath-facts li.cmp { border-left: 4px solid var(--c); }
+.gpath-facts li.cmp b { font-size: 16px; }
+/* 2026-11-21 저녁: 노후 탭 — 최근 기록 칩(좁고 통통), 거꾸로 칸 맞춤, 계획 판정 도장, 오늘 돈 설명 */
+.ph-chip { display: grid; justify-items: start; align-content: center; gap: 1px; width: 124px; max-width: none; min-height: 58px; padding: 6px 10px; border-radius: 12px; white-space: normal; text-align: left; line-height: 1.25; overflow: visible; }
+@media (min-width: 641px) { .ph-chip { min-height: 58px; } }
+.ph-chip small { font-size: 11px; color: var(--text-3); }
+.ph-chip b { font-size: 13px; font-weight: 750; }
+.ph-chip > span { font-size: 11px; color: var(--text-2); }
+.rp-want { align-items: end; }
+.rp-want .field { display: grid; grid-template-rows: auto auto auto; gap: 4px; }
+.rp-want-lb { display: flex; align-items: center; gap: 6px; min-height: 24px; white-space: nowrap; }
+.rp-want .input { min-height: 44px; height: 44px; }
+.rp-want .kr-hint { height: 20px; min-height: 20px; line-height: 20px; margin-top: 0; overflow: hidden; }
+.stamp.caution { color: var(--st-caution); background: color-mix(in srgb, var(--st-caution) 10%, transparent); }
+.stamp.muted { color: var(--text-3); background: none; opacity: .85; }
+.stamp.sm { font-size: 13px; padding: 2px 8px 3px; border-width: 2px; box-shadow: inset 0 0 0 1.5px var(--bg-surface), inset 0 0 0 3px currentColor; transform: rotate(-5deg); letter-spacing: 0; }
+.track-verdict { display: grid; gap: var(--sp-3) var(--sp-5); margin-top: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctrl); background: var(--bg-sunken); }
+@media (min-width: 900px) { .track-verdict { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: center; } }
+.tv-main { display: grid; justify-items: start; gap: 8px; }
+.tv-main p { margin: 0; font-size: var(--fs-label); color: var(--text-1); }
+.tv-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.tv-items li { display: grid; justify-items: start; gap: 6px; }
+.tv-lb { font-size: var(--fs-caption); font-weight: 700; color: var(--text-2); }
+.money-explain { display: grid; gap: var(--sp-3) var(--sp-5); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctrl); background: var(--bg-sunken); }
+@media (min-width: 900px) { .rp-years .money-explain { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; } }
+.mx-defs p { margin: 0 0 4px; font-size: var(--fs-label); }
+.mx-defs p b { display: inline-block; min-width: 96px; margin-right: 4px; }
+.mx-defs .cap { margin-top: 6px; line-height: 1.55; }
+.mx-bars { display: grid; gap: 6px; }
+.mx-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: var(--fs-caption); }
+.mx-lb { color: var(--text-2); }
+.mx-row b { font-variant-numeric: tabular-nums; font-size: var(--fs-label); }
+.mx-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--bg-surface); }
+.mx-bar .then { background: var(--series-1); }
+.mx-bar .now { background: color-mix(in srgb, var(--series-1) 55%, var(--bg-surface)); }
+.mx-bar .ero { background: repeating-linear-gradient(135deg, var(--erosion) 0 4px, transparent 4px 8px); outline: 1px dashed var(--border-strong); outline-offset: -1px; }
+.mx-ero { margin: 0; text-align: right; }
+.pop .money-explain { background: none; padding: 0; max-width: 360px; }
+@media (max-width: 520px) { .mx-row { grid-template-columns: 86px minmax(0, 1fr); } .mx-row b { grid-column: 2; justify-self: end; } }
+/* 2026-11-21 저녁: 탭 6개, 내 자산 도구줄(휴대폰에서 계좌 칩이 잘리지 않게), 리포트 탭 */
+.tabbar { grid-template-columns: repeat(6, 1fr); }
+.tabbar button { font-size: 11px; }
+.as-toolbar { margin-bottom: 12px; }
+.as-toolbar #ownerChips { flex: 1 1 320px; min-width: 0; }
+@media (max-width: 760px) { .as-toolbar #ownerChips { flex: 1 1 100%; order: -1; } }
+.rp2-empty { padding: var(--sp-6); display: grid; gap: var(--sp-3); justify-items: start; }
+.rp2-verdict { display: grid; gap: var(--sp-4); padding: var(--sp-5); margin-bottom: var(--sp-4); }
+@media (min-width: 900px) { .rp2-verdict { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: center; } }
+.rp2-vmain { display: grid; justify-items: start; gap: var(--sp-3); }
+.rp2-vmain .stamp { font-size: clamp(22px, 2.6vw, 30px); }
+.rp2-vmain p { margin: 0; font-size: 17px; line-height: 1.6; font-weight: 600; }
+.rp2-meter-bar { height: 18px; border-radius: 9px; background: var(--bg-sunken); overflow: hidden; }
+.rp2-meter-bar i { display: block; height: 100%; border-radius: 9px; }
+.rp2-meter-bar i.good { background: var(--st-good); } .rp2-meter-bar i.caution { background: var(--st-caution); } .rp2-meter-bar i.bad { background: var(--st-bad); }
+.rp2-meter-lb { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 6px; font-size: var(--fs-label); color: var(--text-2); }
+.rp2-steps { list-style: none; margin: 0 0 var(--sp-4); padding: 0; display: grid; gap: var(--sp-3); }
+@media (min-width: 700px) { .rp2-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .rp2-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rp2-steps li { display: flex; }
+.rp2-step { flex: 1; display: grid; align-content: start; justify-items: start; gap: 6px; padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-panel); background: var(--bg-surface); color: var(--text-1); text-decoration: none; position: relative; }
+.rp2-step:hover { border-color: var(--border-strong); }
+.rp2-step .gstep { width: 24px; height: 24px; font-size: 13px; }
+.rp2-t { font-size: var(--fs-caption); font-weight: 700; color: var(--text-2); }
+.rp2-v { font-size: clamp(18px, 1.7vw, 22px); font-weight: 760; letter-spacing: -0.01em; }
+.rp2-step .cap { line-height: 1.5; }
+.rp2-go { margin-top: auto; padding-top: 4px; font-size: var(--fs-caption); color: var(--accent); font-weight: 650; }
+@media (min-width: 1100px) { .rp2-steps li:not(:last-child) .rp2-step::after { content: '→'; position: absolute; right: -15px; top: 18px; color: var(--text-3); font-weight: 700; z-index: 1; } }
+.rp2-fix { padding: var(--sp-5); margin-bottom: var(--sp-4); border-left: 4px solid var(--st-bad); }
+.rp2-fix.ok { border-left-color: var(--st-good); }
+.rp2-fix h2, .rp2-more h2 { margin: 0 0 var(--sp-3); font-size: var(--fs-section); font-weight: 720; }
+.rp2-fix h2 small { font-size: var(--fs-caption); color: var(--text-3); font-weight: 550; margin-left: 6px; }
+.rp2-fixes { display: grid; gap: var(--sp-3); grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.rp2-fixcard { display: grid; gap: 2px; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctrl); background: var(--bg-sunken); color: var(--text-1); text-decoration: none; border: 1px solid transparent; }
+.rp2-fixcard:hover { border-color: var(--accent); }
+.rp2-fixcard b { font-size: 18px; font-weight: 760; }
+.rp2-note { margin: var(--sp-3) 0 0; }
+.rp2-more { padding: var(--sp-5); margin-bottom: var(--sp-4); }
+.rp2-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-4); }
+@media (min-width: 900px) { .rp2-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.rp2-list li { display: grid; justify-items: start; gap: 4px; }
+.rp2-links { display: flex; gap: 8px; flex-wrap: wrap; }
+a.btn { text-decoration: none; }
+.rp2-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 420px) { .rp2-step { padding: var(--sp-3); } .rp2-v { font-size: 17px; } .rp2-step .cap { font-size: 12px; } }
+.rp2-fixes { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+@media (max-width: 640px) { .as-toolbar .btn { min-height: 40px; padding: 0 10px; font-size: 14px; } .as-toolbar .icon-btn { width: 40px; height: 40px; } }

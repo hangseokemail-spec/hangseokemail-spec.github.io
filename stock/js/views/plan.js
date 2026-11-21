@@ -1,6 +1,6 @@
 // 탭 '노후' — 목표 탭에서 정한 값을 기본으로, 은퇴 전·후 숫자를 가로로 넣고 바로 아래 그래프로 확인
 // 2026-11-21 개편: 목표·노후 분리, 가로 입력, 목적별 카드(줄마다 같은 높이), 최근 기록 5개
-import { $, $$, store, toast, sheet, debounce } from '../ui/dom.js';
+import { $, $$, store, toast, sheet, debounce, popover } from '../ui/dom.js';
 import { fmtKRW, fmtKRWShort, fmtPct, esc } from '../ui/format.js';
 import { moneyHints } from '../ui/dom.js';
 import { lineChart, css, isMobile } from '../ui/charts.js';
@@ -102,6 +102,18 @@ function syncFromGoal(p) {
 const goalVal = (k) => (!G ? null : k === 'retireAge' ? (G.months > 0 ? +plan.age + Math.max(1, Math.ceil(G.months / 12)) : null) : k === 'initial' ? Math.round(G.initial) : k === 'monthly' ? Math.round(G.monthly) : k === 'rate' ? G.ratePct : k === 'inflation' ? G.inflation : null);
 const curVal = (k) => (k === 'rate' ? (plan.accSegs.length === 1 ? +plan.accSegs[0].rate : null) : +plan[k]);
 
+/** 리포트 탭용: 지금 고른 노후 계획을 목표 값에 맞춰 계산한 묶음(노후 탭을 안 열었어도 동작) */
+export function reportData() {
+  const PP = store('ss.plans');
+  if (!PP?.list?.length) return null;
+  loadGoal();
+  const p = migrate(structuredClone(PP.list[PP.active || 0]));
+  syncFromGoal(p);
+  const r = computePlan(p);
+  const pts = actualPoints(p);
+  return { plan: p, res: r, goal: G, verdict: trackVerdict(pts, r.lp.path, p, r), needRate: needRate(p, r), altTitle };
+}
+
 // ------------------------------------------------------------------ 계획 기록(계획마다 최근 5회): 값을 바꾸고 3초 쉬면 한 번 남김
 const MAX_PH = 5;
 let phTimer = null;
@@ -128,7 +140,10 @@ function renderHistoryChips() {
   const list = (phAll()[plan.id] || []).slice(0, MAX_PH);
   if (!list.length) { box.innerHTML = ''; return; }
   const when = (t) => { const d = new Date(t); return `${d.getMonth() + 1}.${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  box.innerHTML = `<span class="ph-title">최근 기록</span>${list.map((h, i) => `<button class="ph-chip ${h.ok ? 'ok' : 'short'}" type="button" data-ph="${i}" title="${esc(h.sum)} · 이 값으로 되돌리기"><small>${esc(when(h.at))}</small>${esc(h.sum)}</button>`).join('')}`;
+  box.innerHTML = `<span class="ph-title">최근 기록</span>${list.map((h, i) => {
+    const parts = String(h.sum || '').split(' · '), status = parts.pop() || '', rest = parts.join(' · ');
+    return `<button class="ph-chip ${h.ok ? 'ok' : 'short'}" type="button" data-ph="${i}" title="${esc(h.sum)}"><small>${esc(when(h.at))}</small><b class="${h.ok ? 't-good' : 't-bad'}">${esc(status)}</b><span>${esc(rest.replace(' 은퇴', ''))}</span></button>`;
+  }).join('')}`;
   $$('[data-ph]', box).forEach((b) => { b.onclick = () => {
     const h = list[+b.dataset.ph]; const before = snapOf(plan);
     Object.assign(plan, structuredClone(h.snap)); if (!plan.link) plan.link = {}; plan.example = false; store('ss.plans', P); render();
@@ -332,12 +347,13 @@ function renderResult() {
       </div>
       <button class="btn small" type="button" id="toFinder">이 계획에 필요한 연 ${fmtPct(needRate())} → 투자 규칙 찾기</button>
     </div>
-    <div class="chart-tools rp-chart-tools"><div class="legend" id="planLegend"></div><span class="cap">모든 금액은 그해 통장 숫자</span></div>
+    <div class="chart-tools rp-chart-tools"><div class="legend" id="planLegend"></div><span class="cap">모든 금액은 그해 통장 숫자 <button class="help" type="button" id="moneyHelp" aria-label="그해 통장 숫자와 오늘 돈 설명">?</button></span></div>
     <div class="readout" id="planReadout"></div>
     <div class="chart-box"><div class="chart" id="planChart" role="img" aria-label="나이별 자산"></div></div>
     <div class="kpis rp-kpis">${kpis.map(([lb, v, c, tone]) => `<div class="kpi"><div class="lb">${esc(lb)}</div><div class="v${tone ? ` t-${tone}` : ''}">${v}</div><div class="cmp">${esc(c)}</div></div>`).join('')}</div>
     ${res.alts.length ? `<div class="rp-alts"><span class="gs-lb">이렇게 바꾸면? <span class="faint">누르면 그래프에 점선으로 · 한 번 더 누르면 계획에 넣기</span></span><div class="alt-chips" id="altChips">${res.alts.map((a, i) => `<button class="alt-chip" type="button" data-a="${i}" aria-pressed="${altPreview === i}"><b>${esc(altTitle(a))}</b>${esc(a.label)}${altPreview === i ? ' · 다시 누르면 넣기' : ''}</button>`).join('')}</div></div>` : ''}`;
   $('#toFinder', R).onclick = () => goFinder(needRate() * 100, plan.retireAge - plan.age);
+  $('#moneyHelp', R).onclick = (e) => popover(e.currentTarget, moneyExplainHtml(false));
   $('#needToGoal', R)?.addEventListener('click', () => {
     const g = loadGoal(), before = structuredClone(g);
     g.scale = { ...g.scale, then: Math.round(lp.needAtRetire), years: Math.max(1, plan.retireAge - plan.age), last: 'then' };
@@ -367,10 +383,10 @@ function goFinder(ratePct, years) {
   window.dispatchEvent(new CustomEvent('finder:prefill', { detail: pre }));
 }
 /** 계획에 필요한 연수익률(부족하면 역산값, 아니면 지금 가정의 평균) */
-function needRate() {
-  const alt = res.alts.find((a) => a.id === 'rate');
+function needRate(p = plan, r = res) {
+  const alt = r.alts.find((a) => a.id === 'rate');
   if (alt?.single != null) return alt.single;
-  const segs = plan.accSegs; const n = plan.retireAge - plan.age;
+  const segs = p.accSegs; const n = p.retireAge - p.age;
   let tot = 0; for (let y = 1; y <= n; y++) { const g = segs.find((x) => x.from <= y && (x.to == null || y <= x.to)) || segs[segs.length - 1]; tot += +g.rate; }
   return n > 0 ? tot / n / 100 : 0.05;
 }
@@ -433,7 +449,8 @@ function renderMore() {
     card('segCard', '수익률을 구간마다 다르게 잡을까요?', '은퇴가 가까울수록 안전하게 굴린다면 구간마다 수익률을 다르게 넣으세요. 경계를 끌거나 숫자를 고쳐요.', '<div id="segEditor"></div>'),
     card('incomeCard', `${plan.retireAge}세 자산으로 한 달에 얼마 쓸 수 있나요?`, '모인 돈에서 해마다 몇 %씩 꺼내 쓰면 매달 얼마가 되는지, 거꾸로 원하는 생활비엔 얼마가 필요한지 봐요.', '<div id="incomeBox" class="rp-income"></div>', true),
     `<section class="rp-card wide rp-track" id="trackCard"><div id="trackBox"></div></section>`,
-    `<section class="rp-card wide rp-years"><details class="more"><summary>나이별 표 — 해마다 자산(그해 통장 숫자 · 오늘 돈)</summary><div id="yearTbl"></div></details></section>`,
+    `<section class="rp-card wide rp-years" id="yearsCard"><header><h3>몇 살에 얼마가 있을까?</h3><p class="cap">해마다 내 자산을 ‘오늘 돈’과 ‘그해 통장 숫자’ 두 가지로 보여 줘요. 왜 둘이 다른지는 아래 그림을 보세요.</p></header>
+      <div id="moneyExplain"></div><details class="more"><summary>해마다 표 펼치기</summary><div id="yearTbl"></div></details></section>`,
   ].join('');
   wireLifeBar(box);
   renderSegEditor();
@@ -551,8 +568,8 @@ function renderIncome() {
     ${res.incomeTable.map((r) => `<tr${r.rate === 4 ? ' class="hl-row"' : ''}><td>${r.rate}%${r.rate === 4 ? ' <span class="cap">4% 규칙</span>' : ''}</td><td class="num">${fmtKRW(r.monthly)}</td><td class="num">${fmtKRW(r.monthlyToday)}</td>${pens ? `<td class="num">${fmtKRW(r.monthlyToday + pens)}</td>` : ''}</tr>`).join('')}</tbody></table></div>
     <div class="rp-income-rev"><h4>거꾸로 — 원하는 생활비엔 얼마가 필요할까?</h4>
     <div class="rp-want">
-      <label class="field">매달 이만큼 쓰고 싶다면 <span class="when-tag now">오늘 돈</span><div class="input-unit"><input class="input num" id="wantM" inputmode="numeric" data-money="KRW" value="${want.toLocaleString('ko-KR')}"><span>원</span></div></label>
-      <label class="field">꺼내는 비율<div class="input-unit"><input class="input num" id="wantR" inputmode="decimal" value="${rate}"><span>%</span></div><span class="kr-hint"></span></label>
+      <label class="field"><span class="rp-want-lb">매달 쓰고 싶은 돈 <span class="when-tag now">오늘 돈</span></span><div class="input-unit"><input class="input num" id="wantM" inputmode="numeric" data-money="KRW" value="${want.toLocaleString('ko-KR')}"><span>원</span></div></label>
+      <label class="field"><span class="rp-want-lb">해마다 꺼내는 비율</span><div class="input-unit"><input class="input num" id="wantR" inputmode="decimal" value="${rate}"><span>%</span></div><span class="kr-hint"></span></label>
     </div>
     <p id="wantOut" class="rp-wantout"></p>
     <p class="cap">‘4% 규칙’은 은퇴 자산의 4%를 해마다 꺼내 쓰는 방식이에요. 비율이 높을수록 자산이 빨리 줄어요.</p></div>`;
@@ -569,36 +586,63 @@ function renderIncome() {
 }
 
 // ------------------------------------------------------------------ 목표 vs 실제
-function actualPoints() {
+function actualPoints(p = plan) {
+  const plan = p; // 아래 줄은 그대로(이 계획 기준)
   const start = new Date(plan.startedAt);
   const toM = (d) => { const t = new Date(d); return (t.getFullYear() - start.getFullYear()) * 12 + (t.getMonth() - start.getMonth()) + (t.getDate() - start.getDate()) / 30; };
   const snaps = (store('ss.snapshots') || []).map((s) => ({ date: s.date, v: plan.track?.owner && plan.track.owner !== 'all' ? s.byOwner?.[plan.track.owner] : s.total })).filter((x) => x.v);
   const manual = (plan.actuals || []).map((a) => ({ date: a.date, v: a.value, manual: true }));
   return [...snaps, ...manual].map((a) => ({ ...a, m: toM(a.date) })).filter((a) => a.m >= -0.5).sort((a, b) => a.m - b.m);
 }
+/** 계획대로 가고 있나: 금액·속도·최근 흐름으로 판정하고 도장을 찍음 */
+function trackVerdict(pts, path, p = plan, r = res) {
+  const plan = p;
+  const tone = (r) => (r >= 0.98 ? 'good' : r >= 0.9 ? 'caution' : 'bad');
+  if (!pts.length) return { main: { cls: 'muted', text: '아직 기록 없음' }, cap: '내 자산 탭에 자산을 넣거나 ‘+ 실제 금액 기록’으로 넣으면, 계획대로 가고 있는지 판정해 드려요.', items: [] };
+  const lastP = pts[pts.length - 1], first = pts[0];
+  const at = (m) => path[Math.max(0, Math.min(path.length - 1, Math.round(m)))];
+  const planned = at(lastP.m), rate = planned ? lastP.v / planned : 1, gap = planned - lastP.v;
+  const main = rate >= 1.05 ? { cls: 'good', text: '앞서가요!' } : rate >= 0.98 ? { cls: 'good', text: '계획대로!' } : rate >= 0.9 ? { cls: 'caution', text: '조금 분발!' } : { cls: 'bad', text: '더 분발해요!' };
+  // 따라잡는 길: 은퇴 때까지 남은 달에 매달 더 넣을 돈(계획 수익률로 굴린다고 봄)
+  const left = Math.max(1, Math.round((plan.retireAge - plan.age) * 12 - lastP.m));
+  const i = Math.pow(1 + needRate(p, r), 1 / 12) - 1, g = Math.pow(1 + i, left);
+  const extra = gap > 0 ? (Math.abs(i) < 1e-9 ? gap / left : (gap * i * g) / (g - 1)) : 0;
+  const cap = rate >= 0.98 ? `있어야 할 돈보다 ${fmtKRW(Math.abs(gap))} ${gap <= 0 ? '많아요' : '모자라지만 거의 맞아요'}. 지금처럼만 하면 돼요.`
+    : `있어야 할 돈보다 ${fmtKRW(gap)} 모자라요. 은퇴까지 매달 ${fmtKRW(Math.ceil(extra / 1e4) * 1e4)}씩 더 모으면 따라잡아요.`;
+  const items = [{ lb: '금액', cls: tone(rate), text: `계획의 ${Math.round(rate * 100)}%`, desc: `있어야 할 돈 ${fmtKRWShort(planned)} · 실제 ${fmtKRWShort(lastP.v)}` }];
+  const yrs = (lastP.m - first.m) / 12;
+  if (pts.length >= 2 && yrs >= 0.25) {
+    const act = Math.pow(lastP.v / first.v, 1 / yrs) - 1, pl = Math.pow(at(lastP.m) / at(first.m), 1 / yrs) - 1;
+    items.push({ lb: '불어나는 속도', cls: act >= pl - 0.005 ? 'good' : act >= pl - 0.03 ? 'caution' : 'bad', text: act >= pl - 0.005 ? '속도 좋아요' : '속도가 느려요', desc: `실제 연 ${fmtPct(act)} · 계획 연 ${fmtPct(pl)}(적립 포함)` });
+  } else items.push({ lb: '불어나는 속도', cls: 'muted', text: '기록이 더 필요해요', desc: '석 달 넘게 두 번 이상 기록하면 보여요' });
+  if (pts.length >= 2) {
+    const prev = pts[pts.length - 2], d = lastP.v - prev.v;
+    items.push({ lb: '최근 흐름', cls: d >= 0 ? 'good' : 'bad', text: d >= 0 ? '늘어나는 중' : '줄어드는 중', desc: `${prev.date} → ${lastP.date} ${d >= 0 ? '+' : '−'}${fmtKRWShort(Math.abs(d))}` });
+  } else items.push({ lb: '최근 흐름', cls: 'muted', text: '한 번 더 기록하면', desc: '두 번째 기록부터 늘었는지 줄었는지 보여요' });
+  return { main, cap, items, behind: rate < 0.98, lastP, planned, rate, first };
+}
+let lastTrackStamp = null;
 function renderTrack() {
   const box = $('#trackBox', root);
   const pts = actualPoints();
   const path = res.lp.path;
   const owners = [...new Set((store('ss.holdings')?.accounts || []).map((a) => a.owner).filter(Boolean))];
-  let body;
-  if (!pts.length) {
-    body = '';
-  } else {
-    const lastP = pts[pts.length - 1];
-    const mi = Math.max(0, Math.min(path.length - 1, Math.round(lastP.m)));
-    const planned = path[mi];
-    const rate = planned ? lastP.v / planned : null;
-    const first = pts[0];
+  const V = trackVerdict(pts, path);
+  const slam = V.main.text !== lastTrackStamp; lastTrackStamp = V.main.text;
+  let body = `<div class="track-verdict">
+      <div class="tv-main"><span class="stamp ${V.main.cls}${slam ? ' slam' : ''}">${esc(V.main.text)}</span><p>${esc(V.cap)}</p>${V.behind ? `<button class="btn small" type="button" id="rebase">지금 자산 ${esc(fmtKRWShort(V.lastP.v))}에서 계획 다시 세우기</button>` : ''}</div>
+      ${V.items.length ? `<ul class="tv-items">${V.items.map((x) => `<li><span class="tv-lb">${esc(x.lb)}</span><span class="stamp sm ${x.cls}">${esc(x.text)}</span><span class="cap">${esc(x.desc)}</span></li>`).join('')}</ul>` : ''}
+    </div>`;
+  if (pts.length) {
+    const { lastP, planned, rate, first } = V;
     const yrs = (lastP.m - first.m) / 12;
     const cagr = yrs > 0.25 ? Math.pow(lastP.v / first.v, 1 / yrs) - 1 : null;
-    body = `<div class="facts rp-facts"><div class="fact"><div class="lb">최근 실제 자산</div><div class="v">${fmtKRW(lastP.v)}</div><div class="cap">${lastP.date}</div></div>
-      <div class="fact"><div class="lb">그때 계획 경로</div><div class="v">${fmtKRW(planned)}</div></div>
-      <div class="fact"><div class="lb">계획 대비</div><div class="v">${rate ? `${(rate * 100).toFixed(1)}%` : '–'}</div><div class="cap">${rate && rate < 1 ? `${fmtKRW(planned - lastP.v)} 뒤처짐` : rate ? '계획보다 앞서 있어요' : ''}</div></div>
-      <div class="fact"><div class="lb">실제 연평균 증가율</div><div class="v">${cagr == null ? '–' : fmtPct(cagr)}</div><div class="cap">적립 포함 · ${first.date}부터</div></div></div>
-      ${rate && rate < 0.95 ? `<div class="rcard"><span class="st caution">! 주의</span><h4>계획 경로보다 ${((1 - rate) * 100).toFixed(1)}% 뒤처져 있어요</h4><div class="alt"><b>대안</b> 지금 자산 ${fmtKRW(lastP.v)}에서 다시 출발해 계산 <button class="btn small" type="button" id="rebase">다시 계산</button></div></div>` : ''}`;
+    body += `<div class="facts rp-facts"><div class="fact"><div class="lb">지금 실제 자산</div><div class="v">${fmtKRW(lastP.v)}</div><div class="cap">${lastP.date} 기록</div></div>
+      <div class="fact"><div class="lb">계획대로라면 지금 있어야 할 돈</div><div class="v">${fmtKRW(planned)}</div><div class="cap">위 그래프의 선 위 값</div></div>
+      <div class="fact"><div class="lb">계획 대비 달성률</div><div class="v ${rate >= 0.98 ? 't-good' : rate >= 0.9 ? '' : 't-bad'}">${(rate * 100).toFixed(1)}%</div><div class="cap">${rate < 1 ? `${fmtKRW(planned - lastP.v)} 모자람` : `${fmtKRW(lastP.v - planned)} 앞섬`}</div></div>
+      <div class="fact"><div class="lb">실제로 불어난 속도(연)</div><div class="v">${cagr == null ? '–' : fmtPct(cagr)}</div><div class="cap">적립 포함 · ${first.date}부터</div></div></div>`;
   }
-  box.innerHTML = `<div class="rp-track-head"><div><h3>계획대로 가고 있나요?</h3><p class="cap">내 자산 탭의 총액이나 직접 넣은 금액이 위 그래프에 점으로 찍히고, 계획 경로와 비교해요 · 계획 시작 ${plan.startedAt}</p></div><span class="spacer"></span>
+  box.innerHTML = `<div class="rp-track-head"><div><h3>계획대로 가고 있나요?</h3><p class="cap">내 자산 탭의 총액이나 직접 넣은 금액이 위 그래프에 점으로 찍히고, 계획대로라면 있어야 할 돈과 비교해요 · 계획 시작 ${plan.startedAt}</p></div><span class="spacer"></span>
       ${owners.length ? `<select class="input" id="trOwner" style="width:auto;min-height:34px"><option value="all">가족 전체</option>${owners.map((o) => `<option ${plan.track?.owner === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>` : ''}
       <button class="btn small" type="button" id="addActual">+ 실제 금액 기록</button></div>${body}`;
   $('#trOwner', box)?.addEventListener('change', (e) => { plan.track = { owner: e.target.value }; save(); compute(); });
@@ -607,11 +651,26 @@ function renderTrack() {
     $('[data-close]', s.root).onclick = s.close;
     $('[data-ok]', s.root).onclick = () => { const v = +$('#ac_v', s.root).value.replace(/[^\d]/g, ''); if (v) plan.actuals.push({ date: $('#ac_d', s.root).value, value: v }); plan.startedAt = $('#ac_s', s.root).value || plan.startedAt; save(); s.close(); compute(); };
   };
-  $('#rebase', box)?.addEventListener('click', () => { const lastP = pts[pts.length - 1]; plan.initial = Math.round(lastP.v); plan.link = { ...plan.link, initial: false }; plan.startedAt = lastP.date; save(); renderInput(); compute(); toast('지금 자산에서 다시 출발하도록 바꿨어요.'); });
+  $('#rebase', box)?.addEventListener('click', () => { const lastP = V.lastP; plan.initial = Math.round(lastP.v); plan.link = { ...plan.link, initial: false }; plan.startedAt = lastP.date; save(); renderInput(); compute(); toast('지금 자산에서 다시 출발하도록 바꿨어요.'); });
 }
 
+/** 오늘 돈 vs 그해 통장 숫자 설명(그림 + 예) — 표·그래프 도움말에서 같이 씀 */
+function moneyExplainHtml(withBars = true) {
+  const yrs = Math.max(1, plan.retireAge - plan.age), infl = +plan.inflation || 0;
+  const k = Math.pow(1 + infl / 100, yrs), today = 1e8 / k;
+  const bal = res.lp.fvAtRetire, real = bal / k;
+  return `<div class="money-explain">
+    <div class="mx-defs"><p><b>오늘 돈</b> 그 금액으로 살 수 있는 것을 지금 물가로 바꿔 본 값이에요.</p><p><b>그해 통장 숫자</b> 그 해가 되면 통장에 실제로 찍힐 금액이에요.</p>
+      <p class="cap">물가가 해마다 ${infl}%씩 오르면 물건값도 같이 올라요. 그래서 ${yrs}년 뒤 통장에 1억원이 찍혀도, 그 돈으로 살 수 있는 건 오늘 돈 ${esc(fmtKRW(today))}어치예요. 그해 통장 숫자가 늘 더 크고, 둘의 차이는 물가가 가져간 몫이에요.</p></div>
+    ${withBars && bal > 0 ? `<div class="mx-bars" aria-label="${plan.retireAge}세 자산 비교">
+      <div class="mx-row"><span class="mx-lb">${plan.retireAge}세 통장 숫자</span><span class="mx-bar"><i class="then" style="width:100%"></i></span><b>${esc(fmtKRW(bal))}</b></div>
+      <div class="mx-row"><span class="mx-lb">오늘 돈으로는</span><span class="mx-bar"><i class="now" style="width:${(real / bal) * 100}%"></i><i class="ero" style="width:${100 - (real / bal) * 100}%"></i></span><b>${esc(fmtKRW(real))}</b></div>
+      <p class="cap mx-ero">빗금 = 물가가 가져간 몫 ${esc(fmtKRW(bal - real))}</p></div>` : ''}
+  </div>`;
+}
 function renderYearTable() {
+  $('#moneyExplain', root).innerHTML = moneyExplainHtml(true);
   const box = $('#yearTbl', root);
-  box.innerHTML = `<div class="tbl-wrap rp-income-tbl"><table class="tbl"><thead><tr><th>나이</th><th class="num">자산(그해 통장 숫자)</th><th class="num">자산(오늘 돈)</th></tr></thead><tbody>
-    ${res.years.map((r) => `<tr><td>${Math.floor(r.age)}세 <span class="cap">${Math.round(r.age - plan.age)}년 뒤</span></td><td class="num">${fmtKRW(r.balance)}</td><td class="num">${fmtKRW(r.real)}</td></tr>`).join('')}</tbody></table></div>`;
+  box.innerHTML = `<div class="tbl-wrap rp-income-tbl"><table class="tbl"><thead><tr><th>나이</th><th class="num">오늘 돈 <span class="sub">지금 물가로 바꾼 값</span></th><th class="num">그해 통장 숫자 <span class="sub">그 해에 실제로 찍힐 금액</span></th><th class="num">물가가 가져간 몫</th></tr></thead><tbody>
+    ${res.years.map((r) => `<tr><td>${Math.floor(r.age)}세 <span class="cap">${Math.round(r.age - plan.age)}년 뒤</span></td><td class="num">${fmtKRW(r.real)}</td><td class="num">${fmtKRW(r.balance)}</td><td class="num faint">${fmtKRW(r.balance - r.real)}</td></tr>`).join('')}</tbody></table></div>`;
 }

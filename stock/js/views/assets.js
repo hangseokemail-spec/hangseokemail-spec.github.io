@@ -51,8 +51,8 @@ function render() {
   if (!colorMap.size) mergeByKey(valuate(H, {}).rows).forEach((r) => colorFor(r.key));
   takeSnapshot();
   root.innerHTML = `
-    <div class="row" style="margin-bottom:12px">
-      <div class="chips scroll" id="ownerChips" style="flex:1" aria-label="보기 고르기">
+    <div class="row as-toolbar">
+      <div class="chips scroll" id="ownerChips" aria-label="보기 고르기">
         <button class="chip" type="button" data-o="all" aria-pressed="${filter.owner === 'all' && !filter.account}">모아보기${H.accounts.length > 1 ? ` <span class="faint">${H.accounts.length}개 계좌</span>` : ''}</button>
         ${owners().length > 1 ? owners().map((o) => `<button class="chip" type="button" data-o="${esc(o)}" aria-pressed="${filter.owner === o && !filter.account}">${esc(o)} 전체</button>`).join('') : ''}
         ${H.accounts.map((a) => `<button class="chip acc-chip" type="button" data-accchip="${a.id}" aria-pressed="${filter.account === a.id}">${esc(accName(a))}</button>`).join('')}

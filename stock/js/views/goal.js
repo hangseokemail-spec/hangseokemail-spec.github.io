@@ -67,28 +67,35 @@ function drawPath() {
   if (!chartEl) return;
   const info = lastInfo;
   if (!info?.ok || !info.s?.full || !(info.s.full.months > 0)) {
+    window.echarts?.getInstanceByDom(chartEl)?.dispose();
     chartEl.innerHTML = '<p class="empty" style="padding:40px 0;text-align:center">2번에서 목표에 닿는 방법이 나오면 여기에 그려져요.</p>';
     facts.innerHTML = ''; $('#goalLegend', root).innerHTML = '';
     return;
   }
-  chartEl.innerHTML = '';
+  if (chartEl.querySelector(':scope > .empty')) chartEl.innerHTML = ''; // 차트가 이미 있으면 그대로 두고 옵션만 바꿈(지우면 빈 화면이 됨)
   const f = info.s.full, { bal, paid } = pathOf(f), T = info.target, n = f.months;
+  const cmps = (info.compares || []).map((c, i) => ({ ...c, color: css(`--compare-${(i % 6) + 1}`), ...pathOf(c.full) }));
+  const nMax = Math.max(n, ...cmps.map((c) => c.full.months));
   const x = (m) => m / 12;
-  const step = n > 240 ? 12 : n > 60 ? 3 : 1;
-  const pts = (arr) => arr.map((v, m) => [x(m), v]).filter((_, m) => m % step === 0 || m === n);
+  const stepOf = (len) => (len > 240 ? 12 : len > 60 ? 3 : 1);
+  const pts = (arr) => { const len = arr.length - 1, st = stepOf(len); return arr.map((v, m) => [x(m), v]).filter((_, m) => m % st === 0 || m === len); };
   const series = [
-    { name: '통장 숫자', color: css('--series-1'), area: true, data: pts(bal), width: 2.5 },
-    { name: '넣은 돈', color: css('--text-3'), data: pts(paid), width: 1.5 },
-    { name: '목표', color: css('--accent'), dashed: true, width: 1.5, data: [[0, T], [x(n), T]] },
+    { name: cmps.length ? '지금 조건' : '통장 숫자', color: css('--series-1'), area: !cmps.length, data: pts(bal), width: 2.5 },
+    { name: cmps.length ? '넣은 돈(지금 조건)' : '넣은 돈', color: css('--text-3'), data: pts(paid), width: 1.5 },
+    ...cmps.map((c) => ({ name: c.label, color: c.color, data: pts(c.bal), width: 2.2 })),
+    { name: '목표', color: css('--accent'), dashed: true, width: 1.5, data: [[0, T], [x(nMax), T]] },
   ];
   $('#goalLegend', root).innerHTML = series.map((s) => `<button type="button" aria-pressed="true"><i style="background:${s.dashed ? `repeating-linear-gradient(90deg, ${s.color} 0 4px, transparent 4px 7px)` : s.color}"></i>${esc(s.name)}</button>`).join('');
-  lineChart(chartEl, { series, xType: 'value', isTime: false, xMin: 0, xMax: x(n), xFmt: (v) => (v ? `${+(+v).toFixed(1)}년 뒤` : '지금'), yFmt: (v, ax) => (ax ? fmtKRWShort(v) : fmtKRW(v)), yMin: 0, readout: isMobile() ? $('#goalReadout', root) : null, grid: { left: 60, right: 20, containLabel: false, bottom: 28 } });
+  lineChart(chartEl, { series, xType: 'value', isTime: false, xMin: 0, xMax: x(nMax), xFmt: (v) => (v ? `${+(+v).toFixed(1)}년 뒤` : '지금'), yFmt: (v, ax) => (ax ? fmtKRWShort(v) : fmtKRW(v)), yMin: 0, readout: isMobile() ? $('#goalReadout', root) : null, grid: { left: 60, right: 20, containLabel: false, bottom: 28 } });
   // 짚어 볼 때
   const firstAt = (pred) => { for (let m = 0; m <= n; m++) if (pred(m)) return m; return null; };
   const half = firstAt((m) => bal[m] >= T / 2);
   const cross = firstAt((m) => m > 0 && bal[m] - paid[m] >= paid[m]);
   const lastYear = n >= 12 ? bal[n] - bal[n - 12] - f.monthlyAmt * 12 : null;
   const firstYear = n >= 12 ? bal[12] - bal[0] - f.monthlyAmt * 12 : null;
+  const cmpFacts = cmps.length ? [['지금 조건', `${span(n)} 뒤 ${fmtKRWShort(bal[n])}`, `넣은 돈 ${fmtKRWShort(paid[n])} · 매달 ${fmtKRWShort(f.monthlyAmt)} · 연 ${(f.rate * 100).toFixed(1)}%`, css('--series-1')],
+    ...cmps.map((c) => { const m = c.full.months; return [c.label, `${span(m)} 뒤 ${fmtKRWShort(c.bal[m])}`, `넣은 돈 ${fmtKRWShort(c.paid[m])}${c.paid[m] < paid[n] ? `(${fmtKRWShort(paid[n] - c.paid[m])} 덜)` : c.paid[m] > paid[n] ? `(${fmtKRWShort(c.paid[m] - paid[n])} 더)` : ''} · 매달 ${fmtKRWShort(c.full.monthlyAmt)} · 연 ${(c.full.rate * 100).toFixed(1)}%`, c.color]; })] : null;
+  if (cmpFacts) { facts.innerHTML = cmpFacts.map(([lb, v, c, col]) => `<li class="cmp" style="--c:${col}"><span class="lb">${esc(lb)}</span><b>${esc(v)}</b><span class="cap">${esc(c)}</span></li>`).join(''); return; }
   facts.innerHTML = [
     ['목표에 닿는 때', `${span(n)} 뒤`, `통장 ${fmtKRW(bal[n])}`],
     half != null ? ['목표의 절반', half ? `${span(half)} 뒤` : '지금', '뒤로 갈수록 빨리 불어나요'] : null,

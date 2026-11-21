@@ -198,7 +198,7 @@ export function renderGoalCards(box, goal, hooks) {
     const err = !(v.target > 0) ? '목표 금액을 넣어 주세요.' : (C.ask !== 'years' && yrs > 100) ? '기간은 100년까지 넣을 수 있어요.' : (C.ask !== 'rate' && (+C.rate < -50 || +C.rate > 100)) ? '수익률은 −50%에서 100% 사이로 넣어 주세요.'
       : (C.ask === 'monthly' && !(v.months > 0)) ? '기간을 1년 이상 넣어 주세요.' : '';
     const A = $('#gcAnswer', box);
-    if (err) { A.innerHTML = `<p class="gc-err">${esc(err)}</p>`; $('#gcAlts', box).innerHTML = ''; last = null; hooks.onSolved?.({ ok: false }); return; }
+    if (err) { A.innerHTML = `<p class="gc-err">${esc(err)}</p>`; $('#gcAlts', box).innerHTML = ''; last = null; baseInfo = null; hooks.onSolved?.({ ok: false }); return; }
     const s = solve(C.ask, v); last = s;
     const a = s.ans;
     let head, small = '', line = '', extra = '', pill = '', ok = true;
@@ -241,7 +241,8 @@ export function renderGoalCards(box, goal, hooks) {
     })() : '';
     A.innerHTML = `<div class="gc-head">${esc(head)} ${small ? `<span class="gc-small">${esc(small)}</span>` : ''}</div>${line ? `<p class="gc-line">${esc(line)}</p>` : ''}${pill ? `<p class="gc-warn">${pill}</p>` : ''}${extra ? `<p class="gc-real">${extra}</p>` : ''}${bar}`;
     drawAlts(s, ok, gi);
-    hooks.onSolved?.({ ok, s, target: v.target, months: s.full.months, infl: infl(), today: toToday(v.target, (s.full.months || 0) / 12, infl()), ratePct: Math.round(s.full.rate * 1000) / 10 });
+    baseInfo = { ok, s, target: v.target, months: s.full.months, infl: infl(), today: toToday(v.target, (s.full.months || 0) / 12, infl()), ratePct: Math.round(s.full.rate * 1000) / 10 };
+    emit();
   }
 
   // ---------------- 다른 길: 숫자를 칸에 직접 써서 바로 다시 계산
@@ -273,27 +274,62 @@ export function renderGoalCards(box, goal, hooks) {
     yearsAtReal: { p: 'rate', pre: '수익률을 연', post: '%로 잡으면', res: (v) => { const m = yearsAt({ rate: v }); return m == null ? '100년 안엔 어려워요' : `${span(m)} 걸려요`; }, set: (v) => { const m = yearsAt({ rate: v }); return m == null ? {} : { years: Math.ceil(m / 12) }; } },
     monthlyAtReal: { p: 'rate', pre: '수익률을 연', post: '%로 잡고 기간 안에 닿으려면', res: (v) => { const r = whatIf({ rate: v }, 'monthly'); return r.s.shown != null ? `매달 ${fmtKRW(r.s.shown)}` : '–'; }, set: (v) => { const r = whatIf({ rate: v }, 'monthly'); return r.s.shown != null ? { monthly: r.s.shown } : {}; } },
   };
+  // 그래프에 겹쳐 볼 대안: 종류 → 값. 위 조건(목표)은 바꾸지 않는다.
+  const compares = new Map();
+  let baseInfo = null;
+  const shortKRW = (v) => fmtKRW(v).replace(/ \d{1,3}(,\d{3})*원$/, '원');
+  /** 대안 하나(종류, 칸 값)로 그린 경로 재료 {label, full:{initial, monthlyAmt, rate, months}} */
+  function scen(kind, v) {
+    const base = { initial: +C.initial || 0, monthlyAmt: +C.monthly || 0, rate: (+C.rate || 0) / 100 };
+    const fromSolve = (r) => (r.s.end != null && r.s.full.months > 0 ? r.s.full : null);
+    const withMonths = (m, patch) => (m == null || !(m > 0) ? null : { ...base, ...patch, months: m });
+    let full = null, label = '';
+    if (kind === 'longer' || kind === 'needMonthly' || kind === 'needRate' || kind === 'needInitial') { full = fromSolve(whatIf({ years: v }, ALT[kind].ask || C.ask)); label = `기간 ${v}년`; }
+    else if (kind === 'higherRate') { full = fromSolve(whatIf({ rate: v })); label = `연 ${v}%`; }
+    else if (kind === 'monthlyAtReal') { full = fromSolve(whatIf({ rate: v }, 'monthly')); label = `연 ${v}%`; }
+    else if (kind === 'moreInitial') { full = fromSolve(whatIf({ initial: v })); label = `처음 ${shortKRW(v)}`; }
+    else if (kind === 'moreMonthly') { full = fromSolve(whatIf({ monthly: v })); label = `매달 ${shortKRW(v)}`; }
+    else if (kind === 'monthly') { full = withMonths(yearsAt({ monthly: v }), { monthlyAmt: v }); label = `매달 ${shortKRW(v)}`; }
+    else if (kind === 'rate' || kind === 'yearsAtReal') { full = withMonths(yearsAt({ rate: v }), { rate: v / 100 }); label = `연 ${v}%`; }
+    return full ? { kind, label, full } : null;
+  }
+  function emit() { // 아래 '모이는 모습'에 기본 + 비교 선을 보냄
+    if (!baseInfo) return;
+    const list = [...compares.entries()].map(([k, v]) => scen(k, v)).filter(Boolean);
+    hooks.onSolved?.({ ...baseInfo, compares: list });
+  }
   const defVal = (x) => ({ years: x.months != null ? Math.round(x.months / 12) : C.years, rate: x.rate != null ? +(x.rate * 100).toFixed(1) : C.rate, initial: x.initial ?? ((+C.initial || 0) + (x.plus || 0)), monthly: x.monthly ?? C.monthly });
   function drawAlts(s, ok) {
     const box2 = $('#gcAlts', box);
     const list = s.alts.filter((x) => ALT[x.kind]);
     const zero = s.alts.find((x) => x.kind === 'zeroMonthly');
+    [...compares.keys()].forEach((k) => { if (!list.some((x) => x.kind === k)) compares.delete(k); }); // 질문이 바뀌어 없어진 대안은 비교에서도 뺌
     if (!list.length && !zero) { box2.innerHTML = ''; return; }
     const title = !ok ? '이렇게 하면 닿아요' : C.ask === 'monthly' || C.ask === 'initial' ? '부담을 줄이는 길' : '다른 길';
-    box2.innerHTML = `<span class="gs-lb">${title} <span class="faint">· 숫자를 바꿔 보세요</span></span>${list.map((x, i) => {
-      const A2 = ALT[x.kind], p = A2.p, v = defVal(x)[p];
-      const money = p === 'initial' || p === 'monthly';
-      return `<div class="gc-alt" data-i="${i}">${A2.pre ? `<span>${A2.pre}</span>` : ''}<input class="gc-altin${money ? ' money' : ''}" data-altv="${i}" inputmode="${money ? 'numeric' : 'decimal'}" value="${money ? won(v) : v}" aria-label="${A2.pre || ''} ${A2.post}">${`<span>${A2.post}</span>`}<b class="gc-altres" data-altres="${i}">${esc(A2.res(+v))}</b><button class="btn small" type="button" data-altgo="${i}">이걸로</button></div>`;
+    box2.innerHTML = `<span class="gs-lb">${title} <span class="faint">· 숫자를 바꿔 보고, 아래 그래프에 겹쳐 비교하세요</span></span>${list.map((x, i) => {
+      const A2 = ALT[x.kind], p = A2.p, v = compares.has(x.kind) ? compares.get(x.kind) : defVal(x)[p];
+      const money = p === 'initial' || p === 'monthly', on = compares.has(x.kind);
+      return `<div class="gc-alt${on ? ' on' : ''}" data-i="${i}"><span class="gc-altq">${A2.pre ? `<span>${A2.pre}</span>` : ''}<input class="gc-altin${money ? ' money' : ''}" data-altv="${i}" inputmode="${money ? 'numeric' : 'decimal'}" value="${money ? won(v) : v}" aria-label="${A2.pre || ''} ${A2.post}"><span>${A2.post}</span></span><b class="gc-altres" data-altres="${i}">${esc(A2.res(+v))}</b>
+        <span class="gc-altbtns"><button class="btn small gc-cmpbtn" type="button" data-altcmp="${i}" aria-pressed="${on}" title="위 조건은 그대로 두고, 아래 그래프에 이 경우를 함께 그려요">${on ? '✓ 그래프에 비교 중' : '그래프에 비교'}</button><button class="btn small" type="button" data-altgo="${i}" title="위 '어떻게 모을까' 조건과 노후로 넘길 값을 이 값으로 바꿔요">목표 설정 변경</button></span></div>`;
     }).join('')}${zero ? '<div class="gc-alt"><span>이미 충분해요.</span><button class="btn small" type="button" id="gcZero">매달 0원으로 바꾸기</button></div>' : ''}`;
     $$('[data-altv]', box2).forEach((inp) => {
       const i = +inp.dataset.altv, A2 = ALT[list[i].kind], money = A2.p === 'initial' || A2.p === 'monthly';
       inp.addEventListener('focus', () => inp.select());
-      inp.addEventListener('input', () => { const v = num(inp.value); if (money) inp.value = inp.value.trim() ? won(v) : ''; $(`[data-altres="${i}"]`, box2).textContent = A2.res(v); });
-      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') $(`[data-altgo="${i}"]`, box2).click(); });
+      inp.addEventListener('input', () => { const v = num(inp.value); if (money) inp.value = inp.value.trim() ? won(v) : ''; $(`[data-altres="${i}"]`, box2).textContent = A2.res(v); if (compares.has(list[i].kind)) { compares.set(list[i].kind, v); emit(); } });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') $(`[data-altcmp="${i}"]`, box2).click(); });
     });
+    $$('[data-altcmp]', box2).forEach((b) => { b.onclick = () => {
+      const i = +b.dataset.altcmp, k = list[i].kind;
+      if (compares.has(k)) compares.delete(k); else compares.set(k, num($(`[data-altv="${i}"]`, box2).value));
+      const on = compares.has(k);
+      b.setAttribute('aria-pressed', String(on)); b.textContent = on ? '✓ 그래프에 비교 중' : '그래프에 비교'; b.closest('.gc-alt').classList.toggle('on', on);
+      emit();
+      if (on) document.getElementById('gpTitle')?.closest('.gpath')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }; });
     $$('[data-altgo]', box2).forEach((b) => { b.onclick = () => {
       const i = +b.dataset.altgo, A2 = ALT[list[i].kind];
       const v = num($(`[data-altv="${i}"]`, box2).value);
+      compares.delete(list[i].kind); // 기본이 그 값이 되므로 비교 선은 지움
       const st = A2.set(v);
       const before = { S: structuredClone(S), C: structuredClone(C) };
       if (st.monthly != null) C.monthly = Math.round(st.monthly);
@@ -303,7 +339,7 @@ export function renderGoalCards(box, goal, hooks) {
       if (A2.ask) { C.ask = A2.ask; $$('[data-ask]', box).forEach((q) => q.setAttribute('aria-pressed', String(q.dataset.ask === C.ask))); }
       if (C.link === 'scale') syncFromScale();
       hooks.save(); paintScale(); drawParams(); drawCalc();
-      hooks.toast('그 값으로 바꿨어요.', { label: '되돌리기', fn: () => { Object.assign(S, before.S); Object.assign(C, before.C); $('#gsYears', box).value = S.years; $$('[data-ask]', box).forEach((q) => q.setAttribute('aria-pressed', String(q.dataset.ask === C.ask))); hooks.save(); paintScale(); drawParams(); drawCalc(); } });
+      hooks.toast('목표 설정을 바꿨어요. 아래 ‘노후 준비하기’에도 새 값이 들어가요.', { label: '되돌리기', fn: () => { Object.assign(S, before.S); Object.assign(C, before.C); $('#gsYears', box).value = S.years; $$('[data-ask]', box).forEach((q) => q.setAttribute('aria-pressed', String(q.dataset.ask === C.ask))); hooks.save(); paintScale(); drawParams(); drawCalc(); } });
     }; });
     $('#gcZero', box2)?.addEventListener('click', () => { C.monthly = 0; hooks.save(); drawParams(); drawCalc(); });
   }
