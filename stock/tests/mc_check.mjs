@@ -1,0 +1,22 @@
+// 몬테카를로 확인: 수익률이 일정하면 모든 경로가 같고 손계산과 맞음, 씨앗이 같으면 결과가 같음
+import { monteCarlo } from '../js/core/montecarlo.js';
+let pass = 0, fail = 0;
+const ok = (n, c, i = '') => { if (c) pass++; else { fail++; console.log('실패:', n, i); } };
+const near = (a, b, t) => Math.abs(a - b) <= t;
+const flat = Array(120).fill(0.01);
+const A = monteCarlo(flat, { years: 20, initial: 1e7 });
+ok('일정 수익률 최종', near(A.final[2], 1e7 * Math.pow(1.01, 240), 1), A.final[2]);
+ok('일정 수익률 분포 폭 0', near(A.final[0], A.final[4], 1e-6));
+ok('일정 수익률 CAGR', near(A.cagr[2], Math.pow(1.01, 12) - 1, 1e-9));
+ok('일정 수익률 낙폭 0', A.mdd[2] === 0);
+const B = monteCarlo(flat, { years: 10, initial: 0, flow: { amount: 1e6, freq: 'M', growth: 0 } });
+const fvAnn = 1e6 * ((Math.pow(1.01, 120) - 1) / 0.01);
+ok('매달 적립 최종 = 연금 공식', near(B.final[2], fvAnn, 1), [B.final[2], fvAnn]);
+ok('넣은 돈 합계', near(B.paid, 1.2e8, 1e-6), B.paid);
+const r = []; for (let k = 0; k < 240; k++) r.push(((k * 7919) % 97) / 97 * 0.12 - 0.05);
+const C1 = monteCarlo(r, { years: 15, initial: 1e7, seed: 3 }), C2 = monteCarlo(r, { years: 15, initial: 1e7, seed: 3 }), C3 = monteCarlo(r, { years: 15, initial: 1e7, seed: 4 });
+ok('같은 씨앗 같은 결과', C1.final.join() === C2.final.join());
+ok('다른 씨앗 다른 결과', C1.final.join() !== C3.final.join());
+ok('분위수 순서', C1.final.every((v, i) => i === 0 || v >= C1.final[i - 1]) && C1.mdd.every((v, i) => i === 0 || v >= C1.mdd[i - 1]));
+ok('띠 개수', C1.band.length === 16 && C1.band[0].every((v) => v === 1e7));
+console.log(`mc: 통과 ${pass} / 실패 ${fail}`);

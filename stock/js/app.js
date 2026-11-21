@@ -3,13 +3,14 @@ import { $, $$, sheet, settings, saveSettings, applyTheme, toast, store } from '
 import { loadUniverse, loadMeta, prefetch } from './core/data.js';
 import { initBacktest } from './views/backtest.js';
 import { initPlan } from './views/plan.js';
+import { initGoal } from './views/goal.js';
 import { initAssets } from './views/assets.js';
 import { initFinder } from './views/finder.js';
 import { esc } from './ui/format.js';
 import { login, signup, backend, setBackendOverride, pingBackend, restoreSession, logout, currentUser, exportVault, importVault } from './core/auth.js';
 
-const TABS = ['backtest', 'finder', 'plan', 'assets'];
-const PRIVATE_TABS = new Set(['plan', 'assets']);
+const TABS = ['backtest', 'finder', 'goal', 'plan', 'assets'];
+const PRIVATE_TABS = new Set(['goal', 'plan', 'assets']);
 const inited = {};
 
 function show(tab) {
@@ -21,6 +22,7 @@ function show(tab) {
     inited[tab] = true;
     const el = $(`#view-${tab}`);
     if (tab === 'backtest') initBacktest(el);
+    if (tab === 'goal') initGoal(el);
     if (tab === 'plan') initPlan(el);
     if (tab === 'assets') initAssets(el);
     if (tab === 'finder') initFinder(el);
@@ -51,7 +53,7 @@ function openLogin(fromLocked = false, mode = 'login') {
       <div class="login-brand"><span class="logo"></span>Seok's Stock</div>
       <div class="seg login-tabs" role="tablist"><button type="button" data-m="login" aria-pressed="${mode === 'login'}">로그인</button><button type="button" data-m="signup" aria-pressed="${mode === 'signup'}">가입하기</button></div>
       ${mode === 'login' ? `
-        <h1>${fromLocked ? '목표·노후와 내 자산은 로그인해야 볼 수 있어요' : '다시 오셨네요'}</h1>
+        <h1>${fromLocked ? '목표·노후·내 자산은 로그인해야 볼 수 있어요' : '다시 오셨네요'}</h1>
         <label class="field">아이디<input class="input" name="username" id="lg_id" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
         <label class="field">비밀번호<input class="input" name="password" id="lg_pw" type="password" autocomplete="current-password" required></label>`
       : `

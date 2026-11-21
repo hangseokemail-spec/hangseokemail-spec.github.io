@@ -7,6 +7,7 @@ import { TIMING_PRESETS, ruleText, condText, DEF_LABEL, defaultBuy } from '../co
 import { josa } from '../core/finder.js';
 import { runBacktest } from '../core/engine.js';
 import { computeMetrics, monthlyTable, rolling, drawdown, drawdownEpisodes, assetStats } from '../core/metrics.js';
+import { monteCarlo } from '../core/montecarlo.js';
 import { parseCommand, defaultBtState, newPortfolio } from '../core/nlp.js';
 import { diagnose, evaluateAlt, altStrategy, story } from '../core/comment.js';
 import { todayYm, ymAdd, parseYm, ymToIso, dayToYm } from '../core/dates.js';
@@ -596,6 +597,40 @@ function renderInput() {
   $$('.cond button', box).forEach((x) => x.addEventListener('click', () => setTimeout(sync, 0)));
   renderEditor(pf);
   $('#runBtn', box).onclick = run;
+  if (isMobile()) mobileCards(box, pf, bl);
+}
+/** 휴대폰: 조건 네 묶음을 한 줄 요약 카드로 접고, 누른 카드만 펼침(Fable 보류 §4) */
+let mOpen = null;
+function mobileCards(box, pf, bl) {
+  const strip = (h) => { const d = document.createElement('div'); d.innerHTML = h; return d.textContent.replace(/\s+/g, ' ').trim(); };
+  const sums = {
+    'col-pf': ['무엇을 담을까', `${st.portfolios.filter((p) => !p.off).length > 1 ? `P${active + 1} · ` : ''}${strip(pfText(pf))}`],
+    'col-reb': ['언제 사고팔까', `${strip(rebText(pf))}${pf.timing?.kind ? ` · ${strip(timingText(pf.timing))}` : ''}`],
+    'more': ['기간과 돈', `${strip(periodText())} · ${fmtMoney(st.initial, st.currency)} · ${flowText()}`],
+    'col-cmp': ['무엇과 비교할까', bl.length ? bl.map(benchName).join(', ') : '없음'],
+  };
+  if (!mOpen) mOpen = new Set(last ? [] : ['col-pf']);
+  const grid = $('.bt-grid', box);
+  grid.classList.add('m-cards');
+  [...grid.children].forEach((sec0) => {
+    const k = Object.keys(sums).find((c) => sec0.classList.contains(c)); if (!k) return;
+    const [t, sub] = sums[k];
+    let sec = sec0;
+    if (sec0.tagName === 'DETAILS') { // <details>는 요약 줄이 저절로 생기므로 <section>으로 바꿔 담음
+      sec0.querySelector(':scope > summary')?.remove();
+      sec = document.createElement('section'); sec.className = sec0.className;
+      while (sec0.firstChild) sec.appendChild(sec0.firstChild);
+      sec0.replaceWith(sec);
+    }
+    sec.querySelector(':scope > .col-title')?.remove();
+    const head = document.createElement('button');
+    head.type = 'button'; head.className = 'm-card-head'; head.setAttribute('aria-expanded', String(mOpen.has(k)));
+    head.innerHTML = `<span class="m-card-t">${esc(t)}</span><span class="m-card-sum">${esc(sub)}</span><span class="m-card-ic" aria-hidden="true">${mOpen.has(k) ? '−' : '고치기'}</span>`;
+    const body = document.createElement('div'); body.className = 'm-card-body'; body.hidden = !mOpen.has(k);
+    while (sec.firstChild) body.appendChild(sec.firstChild);
+    sec.append(head, body); sec.classList.add('m-card');
+    head.onclick = () => { const on = !mOpen.has(k); on ? mOpen.add(k) : mOpen.delete(k); body.hidden = !on; head.setAttribute('aria-expanded', String(on)); head.querySelector('.m-card-ic').textContent = on ? '−' : '고치기'; };
+  });
 }
 
 function renderEditor(pf) {
@@ -752,7 +787,7 @@ async function run() {
     pushHistory(runs[0]);
     renderResults();
     announce(`백테스트 완료. 연 ${fmtPct(runs[0].m.cagr)}, 최대 낙폭 ${fmtPct(runs[0].m.mdd)}`);
-    if (isMobile()) $('#btResult', root).scrollIntoView({ behavior: 'smooth' });
+    if (isMobile()) { mOpen = new Set(); renderInput(); $('#btResult', root).scrollIntoView({ behavior: 'smooth' }); }
   } catch (e) {
     console.error(e);
     toast(e.message || '계산하지 못했어요.');
@@ -794,6 +829,9 @@ function renderEmpty() {
 }
 
 const money = (v) => fmtMoney(v, last.st.currency);
+/** 수익률에 ▲▼(색 없이도 방향이 보이게): ▲ 12.3% / ▼ 4.5% */
+const pa = (v, d = 1) => (v == null || !isFinite(v) ? '–' : `<span class="${dirClass(v)} arw">${arrow(v)}${v ? ' ' : ''}${fmtPct(Math.abs(v), d)}</span>`);
+const ppa = (v, d = 1) => (v == null || !isFinite(v) ? '–' : `<span class="${dirClass(v)} arw">${arrow(v)}${v ? ' ' : ''}${fmtPp(Math.abs(v), d).replace(/^\+/, '')}</span>`);
 const label = (k) => (k === 'CASH' ? '현금' : assetInfo(k)?.n || k);
 
 function renderResults() {
@@ -809,12 +847,12 @@ function renderResults() {
     ${historyStrip()}
     <div class="result-head"><p class="result-title">${esc($('#sentence', root)?.innerText || '')}</p>${notes.length ? `<ul class="notes">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</div>
     <div class="kpis">
-      ${kpi('연환산 수익률(CAGR)', 'cagr', `<span class="${dirClass(m0.cagr)}">${fmtPct(m0.cagr)}</span>`, bench ? `${esc(shortBench(bench.key))} ${fmtPct(bench.m.cagr)}` : fmtSpan(m0.months), more((m) => fmtPct(m.cagr)))}
-      ${kpi('최종 금액', 'final', money(m0.final), `${finalRead ? `<span class="kr-read">${esc(finalRead)}</span><br>` : ''}누적 ${fmtPct(m0.totalReturn, 1, true)}`, more((m) => fmtMoneyShort(m.final, last.st.currency)))}
+      ${kpi('연환산 수익률(CAGR)', 'cagr', pa(m0.cagr), bench ? `${esc(shortBench(bench.key))} ${fmtPct(bench.m.cagr)}` : fmtSpan(m0.months), more((m) => fmtPct(m.cagr)))}
+      ${kpi('최종 금액', 'final', money(m0.final), `${finalRead ? `<span class="kr-read">${esc(finalRead)}</span><br>` : ''}누적 ${pa(m0.totalReturn)}`, more((m) => fmtMoneyShort(m.final, last.st.currency)))}
       ${kpi('최대 낙폭', 'mdd', fmtPct(m0.mdd), bench ? `${esc(shortBench(bench.key))} ${fmtPct(bench.m.mdd)}` : fmtYm(m0.mddAt), more((m) => fmtPct(m.mdd)))}
       ${kpi('변동성', 'vol', fmtPct(m0.vol), bench ? `${esc(shortBench(bench.key))} ${fmtPct(bench.m.vol)}` : '연 기준', more((m) => fmtPct(m.vol)))}
       ${kpi('샤프 지수', 'sharpe', fmtNum(m0.sharpe), bench ? `${esc(shortBench(bench.key))} ${fmtNum(bench.m.sharpe)}` : '', more((m) => fmtNum(m.sharpe)))}
-      ${kpi('벤치마크 대비', 'excess', bench ? `<span class="${dirClass(m0.excessCagr)}">${fmtPp(m0.excessCagr)}</span>` : '–', bench ? `베타 ${fmtNum(m0.beta)}` : '비교 대상 없음', bench ? more((m) => fmtPp(m.excessCagr)) : '')}
+      ${kpi('벤치마크 대비', 'excess', bench ? ppa(m0.excessCagr) : '–', bench ? `베타 ${fmtNum(m0.beta)}` : '비교 대상 없음', bench ? more((m) => fmtPp(m.excessCagr)) : '')}
     </div>
     <div class="row" style="padding:8px 16px 0;justify-content:space-between">${runs.some((r) => r.strat.kind === 'rank') ? '<span class="cap"><span class="status-pill caution">추정</span> 지금 DB에 있는 종목 안에서만 순위를 매겨요. 과거에 컸다가 사라진 종목이 빠져 있어 실제보다 좋게 나올 수 있어요.</span>' : '<span></span>'}
       <div class="seg" id="resCur"><button type="button" data-v="KRW" aria-pressed="${last.st.currency === 'KRW'}">원화로 보기</button><button type="button" data-v="USD" aria-pressed="${last.st.currency === 'USD'}">달러로 보기</button></div></div>
@@ -826,7 +864,7 @@ function renderResults() {
     <div class="readout" id="growthReadout"></div>
     <div class="chart-box"><div class="chart" id="growthChart" role="img" aria-label="성장 곡선"></div><div class="chart" id="ddBand" style="height:90px" role="img" aria-label="낙폭 띠"></div><div id="growthTable" hidden></div></div>
     <div class="section"><div class="section-title">진단과 대안 <span class="cap">문제마다 같은 기간으로 다시 계산한 대안을 함께 보여줘요</span></div><div class="cards" id="diagCards"><p class="cap">계산 중…</p></div>
-      <div class="row" style="margin-top:16px"><button class="btn" type="button" id="toPlan">목표·노후로 수익률 보내기</button><button class="btn ghost" type="button" id="share">링크 복사</button><button class="btn ghost" type="button" id="csv">CSV 내보내기</button></div></div>
+      <div class="row" style="margin-top:16px"><button class="btn" type="button" id="toPlan">노후 계획에 수익률 보내기</button><button class="btn ghost" type="button" id="share">링크 복사</button><button class="btn ghost" type="button" id="csv">CSV 내보내기</button></div></div>
     <nav class="subtabs" role="tablist" id="subtabs"></nav>
     <div class="subpanel" id="subpanel"></div>`;
   $$('[data-help]', R).forEach((b) => { b.onclick = () => helpPop(b, b.dataset.help); });
@@ -840,7 +878,7 @@ function renderResults() {
   renderDiagnosis();
   $('#growthTbl', R).onclick = (e) => { const t = $('#growthTable', R); t.hidden = !t.hidden; e.target.textContent = t.hidden ? '표로 보기' : '차트만 보기'; if (!t.hidden) t.innerHTML = growthTable(); };
   const hasRank = runs.some((r) => r.res.rankHistory || r.res.timing?.events?.length);
-  const tabs = [...(hasRank ? [['holdings', '보유 변화']] : []), ['annual', '연도별'], ['monthly', '월별'], ['dd', '낙폭'], ['rolling', '롤링'], ['assets', '자산'], ['metrics', '지표'], ['data', '데이터와 가정']];
+  const tabs = [...(hasRank ? [['holdings', '보유 변화']] : []), ['annual', '연도별'], ['monthly', '월별'], ['dd', '낙폭'], ['rolling', '롤링'], ['mc', '앞으로(몬테카를로)'], ['assets', '자산'], ['metrics', '지표'], ['data', '데이터와 가정']];
   if (!tabs.some((t) => t[0] === subtab) || (hasRank && subtab === 'annual' && !last._visited)) subtab = tabs[0][0];
   last._visited = true;
   $('#subtabs', R).innerHTML = tabs.map(([k, l]) => `<button role="tab" type="button" data-k="${k}" aria-selected="${k === subtab}">${l}</button>`).join('');
@@ -859,14 +897,14 @@ let hidden = new Set();
 function drawGrowth() {
   const list = seriesList();
   const leg = $('#growthLegend', root);
-  leg.innerHTML = list.map((s, i) => `<button type="button" data-i="${i}" aria-pressed="${!hidden.has(i)}"><i style="background:${s.color}"></i><span class="ln">${esc(s.name)}</span><span class="lv"><b class="${dirClass(s.m.totalReturn)}">${fmtPct(s.m.totalReturn, 1, true)}</b> · 연 ${fmtPct(s.m.cagr)}</span></button>`).join('');
+  leg.innerHTML = list.map((s, i) => `<button type="button" data-i="${i}" aria-pressed="${!hidden.has(i)}"><i style="background:${s.color}"></i><span class="ln">${esc(s.name)}</span><span class="lv"><b>${pa(s.m.totalReturn)}</b> · 연 ${fmtPct(s.m.cagr)}</span></button>`).join('');
   $$('button', leg).forEach((b) => { b.onclick = () => { const i = +b.dataset.i; hidden.has(i) ? hidden.delete(i) : hidden.add(i); drawGrowth(); }; });
   const cut = (n) => (n.length > 9 ? `${n.slice(0, 8)}…` : n);
   const series = list.map((s, i) => hidden.has(i) ? null : ({
     name: s.name, color: s.color, width: s.bm ? 1.5 : 2.2, z: s.bm ? 1 : 3,
     data: Array.from(s.res.days, (d, j) => [d * 864e5, s.res.value[j]]),
-    endRich: true, focus: list.length > 2,
-    endLabel: () => `{n|${cut(s.name)}}\n{v|${fmtPct(s.m.totalReturn, 0, true)}}\n{c|CAGR ${fmtPct(s.m.cagr)}}`,
+    focus: list.length > 1,
+    endText: { name: cut(s.name), value: `${arrow(s.m.totalReturn)} ${fmtPct(Math.abs(s.m.totalReturn), 0)}`, sub: `CAGR ${fmtPct(s.m.cagr)}`, cls: dirClass(s.m.totalReturn) },
     markArea: !s.bm && s.res.timing?.expo ? timingAreas(s.res, s.color) : undefined,
   })).filter(Boolean);
   const r0 = list[0].res;
@@ -874,7 +912,7 @@ function drawGrowth() {
   lineChart($('#growthChart', root), { series, log: logScale, yFmt: (v, axis) => (axis ? fmtMoneyShort(v, last.st.currency) : money(v)), readout: isMobile() ? $('#growthReadout', root) : null });
   // 같은 가로축의 얇은 낙폭 띠
   const ddSeries = list.map((s2, i) => (hidden.has(i) ? null : { name: `${s2.name} 낙폭`, color: s2.color, area: !s2.bm, areaOpacity: 0.12, width: s2.bm ? 1 : 1.5, data: (() => { const dd = drawdown(Array.from(s2.res.twr)).dd; return Array.from(s2.res.days, (d, j) => [d * 864e5, dd[j]]); })() })).filter(Boolean);
-  lineChart($('#ddBand', root), { series: ddSeries, yFmt: (v, ax) => fmtPct(v, 0), yMax: 0, grid: { top: 4, bottom: 4, right: !isMobile() ? 118 : 16 } });
+  lineChart($('#ddBand', root), { series: ddSeries, yFmt: (v, ax) => fmtPct(v, 0), yMax: 0, grid: { top: 4, bottom: 4, right: !isMobile() ? 132 : 16 } });
   const tmR = list.find((x) => !x.bm && x.res.timing);
   $('#tmLegend', root).innerHTML = tmR ? `<span class="tm-key"><i></i>쉬는 중(${esc(tmR.res.timing.defLabel || '피신처')}) · 매도 ${tmR.res.timing.nSell}번${tmR.res.timing.nReb ? ` · 조건 리밸런싱 ${tmR.res.timing.nReb}번` : ''} · 투자 비율 ${fmtPct(tmR.res.timing.inRatio, 0)}</span>` : '';
 }
@@ -905,7 +943,7 @@ function renderSub() {
   } else if (subtab === 'annual') {
     const years = [...new Set(list.flatMap((s) => s.m.years.map((y) => y.year)))].sort();
     P.innerHTML = `<div class="readout" id="annReadout"></div><div class="chart" id="annChart"></div>
-      <div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>연도</th>${list.map((s) => `<th class="num">${esc(s.name)}</th>`).join('')}</tr></thead><tbody>${years.map((y) => `<tr><td>${y}${list[0].m.years.find((x) => x.year === y && !x.full) ? ' <span class="cap">(일부)</span>' : ''}</td>${list.map((s) => { const v = s.m.years.find((x) => x.year === y)?.r; return `<td class="num ${dirClass(v)}">${v == null ? '–' : fmtPct(v, 1, true)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+      <div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>연도</th>${list.map((s) => `<th class="num">${esc(s.name)}</th>`).join('')}</tr></thead><tbody>${years.map((y) => `<tr><td>${y}${list[0].m.years.find((x) => x.year === y && !x.full) ? ' <span class="cap">(일부)</span>' : ''}</td>${list.map((s) => { const v = s.m.years.find((x) => x.year === y)?.r; return `<td class="num">${pa(v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
     barChart($('#annChart', P), { cats: years.map(String), series: list.map((s) => ({ name: s.name, color: s.color, data: years.map((y) => s.m.years.find((x) => x.year === y)?.r ?? null) })), yFmt: (v, ax) => fmtPct(v, ax ? 0 : 1, !ax), horizontal: isMobile() && years.length > 6, readout: isMobile() ? $('#annReadout', P) : null });
     if (isMobile() && years.length > 6) $('#annChart', P).style.height = `${Math.max(300, years.length * 34 * Math.min(2, list.length))}px`;
   } else if (subtab === 'monthly') {
@@ -942,7 +980,7 @@ function renderSub() {
       P.innerHTML = `<div class="row" style="margin-bottom:8px"><div class="chips">${wins.map(([w, l]) => `<button class="chip" type="button" data-w="${w}" aria-pressed="${w === win}">${l}</button>`).join('')}</div><button class="help" type="button" data-help="rolling">?</button><span class="cap">${win}개월씩 들고 있었다면 · 시작 달 ${Math.max(0, months - win + 1)}개</span></div>
         <div class="readout" id="rollReadout"></div><div class="chart short" id="rollChart"></div>
         <div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th></th><th class="num">가장 나빴을 때</th><th class="num">중간</th><th class="num">가장 좋았을 때</th><th class="num">손실이었던 비율</th></tr></thead><tbody>
-        ${rows.map(({ s, r }) => { const x = stat(r); return `<tr><td class="name">${esc(s.name)}</td>${x ? `<td class="num">${fmtPct(x[0])}</td><td class="num">${fmtPct(x[1])}</td><td class="num">${fmtPct(x[2])}</td><td class="num">${fmtPct(x[3], 0)}</td>` : '<td colspan="4" class="cap">기간이 짧아요</td>'}</tr>`; }).join('')}</tbody></table></div>
+        ${rows.map(({ s, r }) => { const x = stat(r); return `<tr><td class="name">${esc(s.name)}</td>${x ? `<td class="num">${pa(x[0])}</td><td class="num">${pa(x[1])}</td><td class="num">${pa(x[2])}</td><td class="num">${fmtPct(x[3], 0)}</td>` : '<td colspan="4" class="cap">기간이 짧아요</td>'}</tr>`; }).join('')}</tbody></table></div>
         <p class="cap">${win >= 12 ? '연환산' : '기간'} 수익률. 어느 달에 시작했든 ${win >= 12 ? `${win / 12}년` : `${win}개월`} 들고 있었다면 얻었을 수익의 분포예요.</p>`;
       $$('[data-w]', P).forEach((b) => { b.onclick = () => { win = +b.dataset.w; draw(); }; });
       $$('[data-help]', P).forEach((b) => { b.onclick = () => helpPop(b, b.dataset.help); });
@@ -955,19 +993,21 @@ function renderSub() {
     const as = assetStats(r0.res);
     P.innerHTML = `<div class="section-title">${esc(r0.strat.name)} 자산별 성과 <span class="cap">같은 기간·${last.st.currency === 'KRW' ? '원화' : '달러'} 기준</span></div>
       <div class="tbl-wrap"><table class="tbl"><thead><tr><th>종목</th><th class="num">목표 비중</th><th class="num">연환산</th><th class="num">변동성</th><th class="num">최대 낙폭</th><th class="num">수익 기여</th><th class="num">위험 기여</th></tr></thead><tbody>
-      ${as.stats.map((x) => `<tr><td class="name">${esc(label(x.key))}<span class="sub">${esc(x.key)}</span></td><td class="num">${fmtPct(x.weightTarget)}</td><td class="num ${dirClass(x.cagr)}">${fmtPct(x.cagr)}</td><td class="num">${fmtPct(x.vol)}</td><td class="num">${fmtPct(x.mdd)}</td><td class="num ${dirClass(x.contrib)}">${fmtPp(x.contrib)}</td><td class="num">${fmtPct(x.riskContrib)}</td></tr>`).join('')}</tbody></table></div>
+      ${as.stats.map((x) => `<tr><td class="name">${esc(label(x.key))}<span class="sub">${esc(x.key)}</span></td><td class="num">${fmtPct(x.weightTarget)}</td><td class="num">${pa(x.cagr)}</td><td class="num">${fmtPct(x.vol)}</td><td class="num">${fmtPct(x.mdd)}</td><td class="num">${ppa(x.contrib)}</td><td class="num">${fmtPct(x.riskContrib)}</td></tr>`).join('')}</tbody></table></div>
       <p class="cap">수익 기여 = 매일의 (전날 비중 × 그날 수익률)을 더한 값(근사). 위험 기여 = 목표 비중으로 계산한 변동성 중 그 종목 몫.</p>
       <div class="section-title" style="margin-top:20px">끝날 때 비중</div>${weightsTable(r0)}
       ${as.stats.length > 1 && as.stats.length <= 15 ? `<div class="section-title" style="margin-top:20px">상관관계 <span class="cap">1에 가까울수록 같이 움직여요</span></div><div class="tbl-wrap"><table class="tbl heat"><thead><tr><th></th>${as.stats.map((x) => `<th>${esc(x.key)}</th>`).join('')}</tr></thead><tbody>${as.corr.map((row, i) => `<tr><th>${esc(as.stats[i].key)}</th>${row.map((c) => `<td style="background:color-mix(in srgb, var(--series-3) ${Math.round(Math.max(0, c) * 55)}%, var(--bg-surface))">${c.toFixed(2)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : ''}`;
   } else if (subtab === 'holdings') {
-    renderHoldingsCards(P);
+    renderHoldings(P);
+  } else if (subtab === 'mc') {
+    renderMonteCarlo(P);
   } else if (subtab === 'metrics') {
     const rows = [
-      ['연환산 수익률(CAGR)', (m) => fmtPct(m.cagr, 2), 'cagr'], ['누적 수익률', (m) => fmtPct(m.totalReturn, 1)], ['최종 금액', (m) => money(m.final)],
+      ['연환산 수익률(CAGR)', (m) => pa(m.cagr, 2), 'cagr'], ['누적 수익률', (m) => pa(m.totalReturn)], ['최종 금액', (m) => money(m.final)],
       ['변동성(연)', (m) => fmtPct(m.vol, 2), 'vol'], ['하방편차(연)', (m) => fmtPct(m.downside, 2)], ['최대 낙폭(월말)', (m) => fmtPct(m.mdd, 2), 'mdd'], ['최대 낙폭(일별)', (m) => fmtPct(m.mddDaily, 2)],
       ['샤프 지수', (m) => fmtNum(m.sharpe), 'sharpe'], ['소르티노 지수', (m) => fmtNum(m.sortino), 'sortino'], ['칼마 비율(최근 3년)', (m) => fmtNum(m.calmar)],
-      ['가장 좋았던 해', (m) => (m.best ? `${m.best.year} ${fmtPct(m.best.r, 1, true)}` : '–')], ['가장 나빴던 해', (m) => (m.worst ? `${m.worst.year} ${fmtPct(m.worst.r, 1, true)}` : '–')],
-      ['가장 좋았던 달', (m) => fmtPct(m.bestMonth, 1, true)], ['가장 나빴던 달', (m) => fmtPct(m.worstMonth, 1, true)], ['오른 달 비율', (m) => fmtPct(m.posRatio, 0)],
+      ['가장 좋았던 해', (m) => (m.best ? `${m.best.year} ${pa(m.best.r)}` : '–')], ['가장 나빴던 해', (m) => (m.worst ? `${m.worst.year} ${pa(m.worst.r)}` : '–')],
+      ['가장 좋았던 달', (m) => pa(m.bestMonth)], ['가장 나빴던 달', (m) => pa(m.worstMonth)], ['오른 달 비율', (m) => fmtPct(m.posRatio, 0)],
       ['베타', (m) => fmtNum(m.beta), 'beta'], ['알파(연)', (m) => fmtPct(m.alpha, 2)], ['상관계수', (m) => fmtNum(m.corr)], ['R²', (m) => fmtNum(m.r2)], ['추적오차', (m) => fmtPct(m.trackingError, 2)], ['정보비율', (m) => fmtNum(m.infoRatio)],
       ['상승장 포착률', (m) => fmtPct(m.upCapture, 0)], ['하락장 포착률', (m) => fmtPct(m.downCapture, 0)], ['금액가중수익률(IRR)', (m) => (m.irr == null ? '–' : fmtPct(m.irr, 2))],
     ];
@@ -983,6 +1023,102 @@ function renderSub() {
     $$('[data-help]', P).forEach((b) => { b.onclick = () => helpPop(b, b.dataset.help); });
   }
 }
+/** 보유 변화: 한눈 지도(종목 × 시점) / 카드 */
+let holdView = 'map';
+function renderHoldings(P) {
+  const r = last.runs.find((x) => x.res.rankHistory || x.res.timing?.events?.length);
+  const map = holdMap(r);
+  if (!map) { renderHoldingsCards(P); return; }
+  P.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px"><div class="seg" id="holdView"><button type="button" data-v="map" aria-pressed="${holdView === 'map'}">한눈 지도</button><button type="button" data-v="cards" aria-pressed="${holdView === 'cards'}">카드</button></div></div><div id="holdBody"></div>`;
+  const body = $('#holdBody', P);
+  const draw = () => { if (holdView === 'map') body.innerHTML = map; else renderHoldingsCards(body); };
+  $$('#holdView button', P).forEach((b) => { b.onclick = () => { holdView = b.dataset.v; $$('#holdView button', P).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); draw(); }; });
+  draw();
+}
+/** 종목 × 시점 지도: 칸 진하기 = 비중, 테두리 = 새로 들어온 달, 맨 아래 줄 = 피신처 */
+function holdMap(r) {
+  const res = r.res, tm = res.timing, h = res.rankHistory || [];
+  if (!h.length && (!tm || tm.tm?.kind === 'trigger')) return null;
+  const ymIdx = new Map(res.monthly.map((m) => [m.ym, m.i]));
+  const expoAt = (i, j = null) => (!tm || tm.tm?.kind === 'trigger' ? 1 : tm.expoEach && j != null ? tm.expoEach[j]?.[i] ?? 1 : tm.expo?.[i] ?? 1);
+  let cols;
+  if (h.length) cols = h.map((x) => ({ ym: x.ym, w: new Map(x.picks.map((p) => [p.key, p.w * expoAt(ymIdx.get(x.ym) ?? 0)])) }));
+  else {
+    const as = r.strat.assets, tot = as.reduce((t, a) => t + +a.w, 0) || 1;
+    cols = res.monthly.slice(1).map((m) => ({ ym: m.ym, w: new Map(as.map((a, j) => [a.key, (+a.w / tot) * expoAt(m.i, j)])) }));
+  }
+  const DEF = tm?.defKey ? `피신처 · ${tm.defLabel || tm.defKey}` : null;
+  cols.forEach((c) => { const used = [...c.w.values()].reduce((t, x) => t + x, 0); if (DEF && used < 0.999) c.w.set('__def', 1 - used); });
+  const score = new Map(), first = new Map();
+  cols.forEach((c, ci) => c.w.forEach((w, k) => { score.set(k, (score.get(k) || 0) + w); if (!first.has(k)) first.set(k, ci); }));
+  let rows = [...score.keys()].filter((k) => k !== '__def').sort((a, b) => first.get(a) - first.get(b) || score.get(b) - score.get(a));
+  const more = rows.length > 24 ? rows.length - 24 : 0;
+  if (more) rows = [...rows].sort((a, b) => score.get(b) - score.get(a)).slice(0, 24).sort((a, b) => first.get(a) - first.get(b));
+  if (score.has('__def')) rows.push('__def');
+  const cw = cols.length > 160 ? 5 : cols.length > 90 ? 8 : cols.length > 40 ? 12 : cols.length > 20 ? 20 : 36;
+  let lastX = -99; // 연도 글자가 겹치지 않게 36px 이상 떨어질 때만
+  const years = cols.map((c, i) => { const y = Math.floor(c.ym / 100); if (i && y === Math.floor(cols[i - 1].ym / 100)) return null; if (i * cw - lastX < 36) return null; lastX = i * cw; return y; });
+  const yrStep = 1;
+  const cell = (c, ci, k) => {
+    const w = c.w.get(k) || 0;
+    if (w < 0.005) return '<i></i>';
+    const isNew = k !== '__def' && ci > 0 && !(cols[ci - 1].w.get(k) > 0.005);
+    return `<i class="on${k === '__def' ? ' def' : ''}${isNew ? ' new' : ''}" style="--w:${Math.round(25 + w * 75)}%" title="${fmtYm(c.ym)} · ${esc(k === '__def' ? DEF : label(k))} ${fmtPct(w, 0)}"></i>`;
+  };
+  return `<div class="section-title" style="margin:0 0 4px">${esc(r.strat.name)} — 무엇을 언제 들고 있었나</div>
+    <p class="cap" style="margin:0 0 10px">칸 하나가 ${h.length ? '다시 고른 때' : '한 달'}예요. 진할수록 비중이 크고, <span class="hm-key new"></span> 테두리는 새로 들어온 때${DEF ? ', 맨 아래 회색 줄은 피신해 있던 때' : ''}예요. 칸에 손을 올리면 날짜와 비중이 보여요.</p>
+    <div class="hm-wrap"><div class="hm" style="--cw:${cw}px;--n:${cols.length}">
+      <div class="hm-lb hm-yr"></div><div class="hm-years">${years.map((y, i) => (y != null && (i === 0 || y % yrStep === 0) ? `<span style="left:${i * cw}px">${y}</span>` : '')).join('')}</div>
+      ${rows.map((k) => `<div class="hm-lb${k === '__def' ? ' def' : ''}" title="${esc(k === '__def' ? DEF : `${label(k)} (${k})`)}">${esc(k === '__def' ? DEF : label(k))}</div><div class="hm-row">${cols.map((c, ci) => cell(c, ci, k)).join('')}</div>`).join('')}
+    </div></div>${more ? `<p class="cap">비중이 작았던 ${more}개 종목은 빼고 보여요.</p>` : ''}`;
+}
+
+/** 앞으로(몬테카를로): 과거 월수익률을 12개월 묶음으로 섞어 다시 뽑아 미래 경로 2,000개를 만든다 */
+let mcYears = null;
+function renderMonteCarlo(P) {
+  const r0 = last.runs[0], m = r0.res.monthly;
+  const rets = []; for (let k = 1; k < m.length; k++) rets.push(m[k].t / m[k - 1].t - 1);
+  if (rets.length < 36) { P.innerHTML = '<p class="empty">과거가 3년보다 짧아서 섞어 뽑기엔 재료가 모자라요. 기간을 3년 이상으로 늘려 보세요.</p>'; return; }
+  const opts = [10, 20, 30];
+  if (!mcYears) mcYears = 20;
+  const f = last.st.flow || { type: 'none' };
+  const flow = f.type === 'contribute' ? { amount: +f.amount, freq: f.freq, growth: +f.growth || 0 } : f.type === 'withdraw' ? { amount: -f.amount, freq: f.freq, growth: +f.growth || 0 } : null;
+  const draw = () => {
+    const R = monteCarlo(rets, { years: mcYears, initial: +last.st.initial, flow });
+    const yrs = Math.round(rets.length / 12);
+    const names = ['나쁜 쪽(하위 10%)', '조금 나쁜 쪽(25%)', '가운데(50%)', '조금 좋은 쪽(75%)', '좋은 쪽(상위 10%)'];
+    P.innerHTML = `<div class="row" style="margin-bottom:8px;gap:8px"><span class="cap">앞으로</span><div class="chips">${opts.map((y) => `<button class="chip" type="button" data-y="${y}" aria-pressed="${y === mcYears}">${y}년</button>`).join('')}</div><span class="cap">· 시작 ${esc(money(+last.st.initial))}${flow ? ` · ${esc(flowText())}` : ''} · 경로 ${R.n.toLocaleString('ko-KR')}개</span></div>
+      <div class="facts mc-facts">
+        <div class="fact"><div class="lb">가운데 경우 ${mcYears}년 뒤</div><div class="v">${money(R.final[2])}</div><div class="cap">연 ${pa(R.cagr[2])}</div></div>
+        <div class="fact"><div class="lb">나쁜 쪽(10%) · 좋은 쪽(10%)</div><div class="v">${fmtMoneyShort(R.final[0], last.st.currency)} ~ ${fmtMoneyShort(R.final[4], last.st.currency)}</div><div class="cap">10번 중 8번은 이 사이</div></div>
+        <div class="fact"><div class="lb">넣은 돈보다 적을 확률</div><div class="v ${R.pLoss >= 0.2 ? 'down' : ''}">${fmtPct(R.pLoss, 0)}</div><div class="cap">넣은 돈 ${esc(fmtMoneyShort(R.paid, last.st.currency))}</div></div>
+        <div class="fact"><div class="lb">중간에 −30%보다 깊게 빠질 확률</div><div class="v">${fmtPct(R.pDeep, 0)}</div><div class="cap">최대 낙폭 가운데값 ${fmtPct(R.mdd[2])}</div></div>
+      </div>
+      <div class="chart-tools"><div class="legend" id="mcLegend"></div></div><div class="readout" id="mcReadout"></div><div class="chart short" id="mcChart" role="img" aria-label="미래 경로 분포"></div>
+      <div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th></th><th class="num">${mcYears}년 뒤 금액</th><th class="num">연환산(시간가중)</th><th class="num">그동안 최대 낙폭</th></tr></thead><tbody>
+      ${names.map((nm, i) => `<tr${i === 2 ? ' class="hl-row"' : ''}><td>${nm}</td><td class="num">${money(R.final[i])}</td><td class="num">${pa(R.cagr[i])}</td><td class="num">${fmtPct(R.mdd[i])}</td></tr>`).join('')}</tbody></table></div>
+      <p class="cap">${esc(r0.strat.name)}의 지난 ${yrs}년(${fmtYm(m[1].ym)}~${fmtYm(m[m.length - 1].ym)}) 월수익률을 1년씩 묶어 무작위로 이어 붙였어요. 과거와 비슷한 일이 순서만 바뀌어 반복된다고 보는 계산이라, 과거에 없던 큰 사건이나 앞으로 달라질 수익률은 담지 못해요. 예측이 아니라 ‘이 정도 폭으로 흔들릴 수 있다’는 참고예요.</p>`;
+    $$('[data-y]', P).forEach((b) => { b.onclick = () => { mcYears = +b.dataset.y; draw(); }; });
+    const cur = new Date().getFullYear();
+    const pts = (q) => R.band.map((b, y) => [String(y), b[q]]);
+    const c1 = css('--series-1'), c3 = css('--series-3');
+    const series = [
+      { name: '_low', color: c1, width: 0, area: true, areaOpacity: 0, stack: 'b90', data: pts(0), tooltipHide: true },
+      { name: '_b90', color: c1, width: 0, area: true, areaOpacity: 0.12, stack: 'b90', data: R.band.map((b, y) => [String(y), b[4] - b[0]]), tooltipHide: true },
+      { name: '_low2', color: c1, width: 0, area: true, areaOpacity: 0, stack: 'b50', data: pts(1), tooltipHide: true },
+      { name: '_b50', color: c1, width: 0, area: true, areaOpacity: 0.22, stack: 'b50', data: R.band.map((b, y) => [String(y), b[3] - b[1]]), tooltipHide: true },
+      { name: '나쁜 쪽 10%', color: css('--down'), width: 1.2, dashed: true, data: pts(0) },
+      { name: '가운데', color: c1, width: 2.5, data: pts(2) },
+      { name: '좋은 쪽 10%', color: css('--up'), width: 1.2, dashed: true, data: pts(4) },
+    ];
+    if (flow) { let put = +last.st.initial; const fq = flow.freq === 'Q' ? 4 : flow.freq === 'A' ? 1 : 12; series.push({ name: '넣은 돈', color: css('--text-3'), width: 1.2, dashed: true, data: R.band.map((_, y) => { if (y) put += flow.amount * fq * Math.pow(1 + (flow.growth || 0) / 100, y - 1); return [String(y), Math.max(0, put)]; }) }); }
+    void c3;
+    $('#mcLegend', P).innerHTML = series.filter((x) => !x.name.startsWith('_')).map((x) => `<button type="button" aria-pressed="true"><i style="background:${x.dashed ? `repeating-linear-gradient(90deg, ${x.color} 0 4px, transparent 4px 7px)` : x.color}"></i>${esc(x.name)}</button>`).join('') + `<span class="cap" style="margin-left:6px">진한 띠: 가운데 절반 · 옅은 띠: 10번 중 8번</span>`;
+    lineChart($('#mcChart', P), { series, xType: 'category', isTime: false, xFmt: (v) => (+v ? `${v}년 뒤(${cur + +v})` : '지금'), yFmt: (v, ax) => (ax ? fmtMoneyShort(v, last.st.currency) : money(v)), yMin: 0, readout: isMobile() ? $('#mcReadout', P) : null, grid: { left: 64, right: 20, containLabel: false, bottom: 28 } });
+  };
+  draw();
+}
+
 /** 보유 변화 카드: 다시 고른 시점마다 카드 한 장, 새로 들어온 종목은 강조, 빠진 종목은 줄 긋기, 타이밍 매매도 같은 줄에 */
 function renderHoldingsCards(P) {
   const r = last.runs.find((x) => x.res.rankHistory || x.res.timing?.events?.length);
@@ -1107,7 +1243,7 @@ function sendToPlan() {
   const r0 = last.runs[0];
   const roll = rolling(r0.res, 60).map((x) => x.r).sort((a, b) => a - b);
   const p25 = roll.length ? roll[Math.floor(roll.length * 0.25)] : null;
-  const s = sheet(`<h3>목표·노후 계산에 쓸 수익률</h3><p class="cap">${esc(r0.strat.name)} · ${fmtYm(r0.m.start)}~${fmtYm(r0.m.end)}</p>
+  const s = sheet(`<h3>노후 계획 ‘은퇴 전 수익률’로 쓸 값</h3><p class="cap">${esc(r0.strat.name)} · ${fmtYm(r0.m.start)}~${fmtYm(r0.m.end)}</p>
     <div class="stack">
       <button class="alt-chip" type="button" data-r="${r0.m.cagr}"><b>연 ${fmtPct(r0.m.cagr)}</b>이 기간 연환산 수익률 그대로</button>
       ${p25 != null ? `<button class="alt-chip" type="button" data-r="${p25}"><b>연 ${fmtPct(p25)}</b>보수적: 5년 롤링 수익률 하위 25%</button>` : ''}

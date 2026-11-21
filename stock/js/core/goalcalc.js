@@ -105,6 +105,36 @@ export function solveMonthsReal({ today, infl, initial, monthlyAmt, rate }) {
   return null;
 }
 
+/** 저울 양쪽: 마지막에 손댄 접시를 기준으로 다른 쪽을 계산 */
+export function scalePair(S, infl) {
+  const y = +S?.years || 0;
+  if (S?.last === 'then') return { then: +S.then || 0, today: toToday(+S.then || 0, y, infl) };
+  return { today: +S?.today || 0, then: toThen(+S?.today || 0, y, infl) };
+}
+/**
+ * 목표 탭 상태({inflation, scale, calc}) → 실행 목표 계산에 넣을 값.
+ * calc.link === 'scale'이면 목표 = 저울 오른쪽(그때 통장 숫자), 기간 = 저울 기간(기간을 묻는 중이 아니면).
+ */
+export function goalInputs(goal) {
+  const infl = (+goal?.inflation || 0) / 100, S = goal?.scale || {}, C = goal?.calc || {};
+  const pair = scalePair(S, infl);
+  const linked = C.link === 'scale';
+  const target = linked ? Math.round(pair.then) : +C.target || 0;
+  const years = linked && C.ask !== 'years' ? +S.years || 0 : +C.years || 0;
+  const ref = linked ? +S.years || 0 : C.ask === 'years' ? 0 : years;
+  return { infl, pair, linked, target, years, inp: { target, initial: +C.initial || 0, monthlyAmt: +C.monthly || 0, rate: (+C.rate || 0) / 100, months: Math.round(years * 12), refMonths: Math.round((ref || 20) * 12) } };
+}
+/** 목표 탭에서 정한 실행 목표(답까지 채운 값). 못 닿거나 비어 있으면 null — 노후 탭 기본값으로 씀 */
+export function goalSummary(goal) {
+  if (!goal?.calc) return null;
+  const g = goalInputs(goal);
+  if (!(g.target > 0)) return null;
+  const s = solve(goal.calc.ask, g.inp);
+  if (s.end == null) return null;
+  const f = s.full;
+  return { target: f.target, months: f.months, initial: f.initial, monthly: f.monthlyAmt, ratePct: Math.round(f.rate * 1000) / 10, today: toToday(f.target, f.months / 12, g.infl), inflation: +goal.inflation || 0, end: s.end, paid: s.paid, linked: g.linked };
+}
+
 /**
  * 묻는 것에 따라 풀고, 보이는 값(올림)과 그 값으로 다시 계산한 만기 금액·대안을 만든다.
  * inp: {target, initial, monthlyAmt, rate(비율), months, refMonths?(못 닿을 때 기준 기간)}

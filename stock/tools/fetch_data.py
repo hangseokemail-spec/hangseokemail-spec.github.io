@@ -446,6 +446,120 @@ def merge_incremental(old, new):
     return out
 
 
+# ---------------------------------------------------------------- 국내 시세 오류 정리(2026-11-21)
+# 야후의 국내 옛 시세(대략 2008년 이전)에 값이 세 배쯤 오르내리며 섞이는 날이 있다(예: 대한전선 2005~2007, LG유플러스 2001~2008).
+# 국내 주식은 하루 가격제한폭(지금 ±30%, 2015년 전 ±15%)이 있어 그보다 큰 하루 변동은 실제 거래가 아니다.
+# 국내 주식 하루 비율이 이 밖이면 실제 거래가 아님: 가격제한폭 ±15%(2015-06-15 전) / ±30%(그 뒤)보다 한참 큰 변동
+KR_STOCK_BAND_OLD, KR_STOCK_BAND = (0.75, 1.30), (0.62, 1.45)  # 애매한 날(유상증자 권리락 등)은 건드리지 않게 크게 벗어난 날만
+KR_LIMIT_CHANGE = 20150615
+KR_ETF_BAND = (0.38, 2.10)     # 국내 ETF(레버리지 ±60% 포함)는 넉넉하게
+
+
+def clean_series(raw, u):
+    """국내 종목만:
+    ① 가격제한폭을 크게 벗어나 튀었다가 10거래일 안에 원래 수준(±15%)으로 돌아오면, 그 사이 값을 앞뒤로 메움(야후 오류)
+    ② 그래도 남은 '가격제한폭 밖' 하루 변동(분할·합병·무상증자·감자를 야후가 보정하지 않은 날)은
+       그날 수익을 0으로 보고 그 전 가격·배당을 같은 비율로 맞춤(수정주가 방식). 앞부분을 버리지 않는다.
+       단, 바로 전 1~5일 값이 멈춰 있었으면 그동안 오르내렸을 만큼은 인정하고, 시세가 7일 넘게 비면 건드리지 않는다.
+    고친 내용은 notes로 돌려준다."""
+    notes = []
+    if u.get("m") != "KR":
+        return raw, notes
+    c = list(raw["close"])
+    dates = raw["dates"]
+    n = len(c)
+
+    def band(d):
+        if u.get("t") != "stock":
+            return KR_ETF_BAND
+        return KR_STOCK_BAND_OLD if d < KR_LIMIT_CHANGE else KR_STOCK_BAND
+
+    def gap_days(a, b):
+        return (dt.date(b // 10000, b // 100 % 100, b % 100) - dt.date(a // 10000, a // 100 % 100, a % 100)).days
+
+    def out_of_band(i):
+        lo, hi = band(dates[i])
+        r = c[i] / c[i - 1]
+        return r < lo or r > hi
+
+    fixed = 0
+    i = 1
+    while i < n - 1:
+        if out_of_band(i):
+            for j in range(i + 1, min(n, i + 11)):
+                if abs(c[j] / c[i - 1] - 1) < 0.15:
+                    a, b = c[i - 1], c[j]
+                    for k in range(i, j):
+                        c[k] = a * (b / a) ** ((k - i + 1) / (j - i + 1))
+                    fixed += j - i
+                    i = j
+                    break
+        i += 1
+    if fixed:
+        notes.append(f"튄 값 {fixed}일 메움")
+    divs = [list(x) for x in raw.get("divs", [])]
+    scale, adj_days = 1.0, []
+    for i in range(n - 1, 0, -1):  # 뒤에서부터: 그날 비율 r만큼 그 전 값을 모두 곱해 그날 수익을 0으로
+        c[i] *= scale
+        r = c[i] / (c[i - 1] * scale)
+        lo, hi = band(dates[i])
+        L = 0  # 바로 전 값이 몇 번 그대로였나(1~5번: 시세가 안 바뀐 채 거래는 이어진 듯 → 그만큼 따라잡을 수 있음, 6번 넘게: 거래정지 → 재상장)
+        while i - 2 - L >= 0 and c[i - 1 - L] == c[i - 2 - L]:
+            L += 1
+        if 1 <= L <= 5:
+            lim = (0.85, 1.15) if dates[i] < KR_LIMIT_CHANGE else (0.70, 1.30)
+            lo, hi = min(lo, lim[0] ** (L + 1)), max(hi, lim[1] ** (L + 1))
+        if (r < lo or r > hi) and gap_days(dates[i - 1], dates[i]) <= 7:
+            scale *= r
+            adj_days.append((dates[i], r))
+    c[0] *= scale
+    if adj_days:
+        for x in divs:  # 배당도 같은 비율로(그날 이전 배당만)
+            f = 1.0
+            for d, r in adj_days:
+                if x[0] < d:
+                    f *= r
+            x[1] = sig(x[1] * f, 6)
+        adj_days.sort()
+        notes.append("보정 " + ", ".join(f"{d}(×{r:.2f})" for d, r in adj_days[:6]) + (f" 외 {len(adj_days) - 6}일" if len(adj_days) > 6 else ""))
+    out = dict(raw)
+    out["close"] = c
+    out["divs"] = divs
+    return out, notes
+
+
+def clean_existing():
+    """네트워크 없이 지금 px 파일만 다시 정리하고 순위표를 다시 만든다: fetch_data.py --clean-only"""
+    upath = os.path.join(DATA, "universe.json")
+    uni = json.load(open(upath, encoding="utf-8"))
+    changed = []
+    for it in uni["items"]:
+        if it.get("m") != "KR":
+            continue
+        raw = load_existing(it["k"])
+        if not raw or not raw["dates"]:
+            continue
+        new, notes = clean_series(raw, it)
+        if not notes:
+            continue
+        obj = encode(it["k"], new, raw.get("sh") or None, raw.get("src", "yahoo"))
+        if raw.get("p1", START_TS) != START_TS:
+            obj["p1"] = raw["p1"]
+        write_json(os.path.join(PX, f"{it['k']}.json"), obj)
+        changed.append((it["k"], it.get("n"), notes))
+    for k, nm, notes in changed:
+        log(f"  clean {k} {nm}: {' · '.join(notes)}")
+    if changed:
+        write_json(upath, uni)
+        build_monthly(uni["items"])
+        mpath = os.path.join(DATA, "meta.json")
+        meta = json.load(open(mpath, encoding="utf-8"))
+        meta["updated"] = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        meta["cleaned"] = [[k, " · ".join(n)] for k, _, n in changed]
+        write_json(mpath, meta)
+    log(f"clean-only: {len(changed)} files")
+
+
 def start_of(u):
     return START_US_TS if u["m"] in ("US", "IDX") else START_TS
 
@@ -557,6 +671,9 @@ def fetch_one(u):
             if not shares or abs(shares[-1][1] / cur - 1) > 0.005:
                 shares = (shares or []) + [[today, cur]]
     chk = tr_check(raw) if (src == "yahoo" and mode == "full") else None
+    raw, cnotes = clean_series(raw, u)
+    if cnotes:
+        log(f"  clean {key}: {' · '.join(cnotes)}")
     obj = encode(key, raw, shares, src)
     if start_of(u) != START_TS and not (key == "FX_USDKRW" and raw["dates"][0] > 20000101):
         obj["p1"] = start_of(u)  # 환율은 앞부분 보충에 성공했을 때만 완료 표시(실패하면 다음에 다시 시도)
@@ -579,7 +696,11 @@ def main():
     ap.add_argument("--only", default="")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--full", action="store_true", help="모든 종목을 처음부터 다시 받기(주 1회)")
+    ap.add_argument("--clean-only", action="store_true", help="받지 않고 지금 파일의 국내 시세 오류만 정리")
     args = ap.parse_args()
+    if args.clean_only:
+        clean_existing()
+        return
     global FULL
     FULL = args.full
     os.makedirs(PX, exist_ok=True)

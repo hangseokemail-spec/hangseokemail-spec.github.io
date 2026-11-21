@@ -130,7 +130,7 @@ async function renderSummary() {
       <div class="section"><div class="section-title">예상 배당금 <span class="cap" id="divYear"></span><span class="spacer"></span><div class="seg" id="taxSeg"><button type="button" data-v="1" aria-pressed="${afterTax}">세후</button><button type="button" data-v="0" aria-pressed="${!afterTax}">세전</button></div></div>
         <div class="readout" id="divReadout"></div><div class="chart short" id="divChart"></div><div id="divCal"></div></div>
       ${filter.account ? '' : `<div class="section"><div class="section-title">계좌별 한눈에 <span class="cap">눌러서 그 계좌만 보기</span><span class="spacer"></span><button class="btn small" type="button" id="addAcc">+ 계좌</button></div><div class="acct-cards" id="accCards"></div></div>`}
-      <div class="section row"><button class="btn" type="button" id="toBt">이 구성으로 백테스트</button><button class="btn ghost" type="button" id="toPlan">목표·노후에 연결</button></div>
+      <div class="section row"><button class="btn" type="button" id="toBt">이 구성으로 백테스트</button><button class="btn ghost" type="button" id="toPlan">노후 계획에 연결</button></div>
     </div>`;
   $$('#compMode button', B).forEach((b) => { b.onclick = () => { compMode = b.dataset.v; renderSummary(); }; });
   $$('#chartMode button', B).forEach((b) => { b.onclick = () => { chartMode = b.dataset.v; renderSummary(); }; });
@@ -140,7 +140,7 @@ async function renderSummary() {
   $('#editAcc', B)?.addEventListener('click', () => openAccount(H.accounts.find((a) => a.id === filter.account)));
   $('#fxBtn', B).onclick = async (e) => { const b = e.currentTarget; b.disabled = true; b.textContent = '환율 받는 중…'; const f = await refreshFx(); render(); toast(`환율 ${f.now.toLocaleString('ko-KR')}원(${fxWhen(f)})으로 다시 계산했어요.`); };
   $('#toBt', B).onclick = toBacktest;
-  $('#toPlan', B).onclick = () => { location.hash = '#plan'; toast('목표·노후 탭의 ‘지금 자산과 적립’에서 ‘내 자산에서 불러오기’를 누르면 이 금액이 들어가요. 실제 기록은 자동으로 이어져요.'); };
+  $('#toPlan', B).onclick = () => { location.hash = '#plan'; toast('노후 탭의 ‘지금 모은 돈’ 옆 ‘내 자산에서’를 누르면 이 금액이 들어가요. 실제 기록은 자동으로 이어져요.'); };
   // 배당(계좌별로도 나누려고 합치기 전 행으로 계산)
   const dvRaw = await dividendForecast(v.rows);
   const dv = { ...dvRaw, events: mergeEvents(dvRaw.events) };
@@ -379,7 +379,7 @@ function renderHistory() {
   const snaps = (store('ss.snapshots') || []).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
   const val = (s) => (filter.account ? s.byAccount?.[filter.account] : filter.owner !== 'all' ? s.byOwner?.[filter.owner] : s.total) || 0;
   B.innerHTML = `<div class="surface"><div class="section"><div class="section-title">총자산 추이 <span class="cap">앱을 연 날 하루 한 번 자동 기록</span><span class="spacer"></span><button class="btn small" type="button" id="snapNow">오늘 기록</button><button class="btn small ghost" type="button" id="snapAdd">지난 기록 넣기</button></div>
-    ${snaps.length < 2 ? '<p class="cap">기록이 두 개 이상 쌓이면 추이 그래프가 그려져요. 예전 자산 기록이 있으면 ‘지난 기록 넣기’로 넣으세요. 목표·노후 탭의 ‘목표 vs 실제’에도 같이 찍혀요.</p>' : ''}
+    ${snaps.length < 2 ? '<p class="cap">기록이 두 개 이상 쌓이면 추이 그래프가 그려져요. 예전 자산 기록이 있으면 ‘지난 기록 넣기’로 넣으세요. 노후 탭의 ‘계획대로 가고 있나요?’에도 같이 찍혀요.</p>' : ''}
     <div class="readout" id="hReadout"></div><div class="chart short" id="hChart"></div>
     <div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>날짜</th><th class="num">총자산</th><th class="num">변화</th><th></th></tr></thead><tbody>${snaps.slice().reverse().slice(0, 60).map((s, i, arr) => { const prev = arr[i + 1]; const d = prev ? val(s) - val(prev) : null; return `<tr><td>${s.date}</td><td class="num">${money(val(s))}</td><td class="num ${dirClass(d)}">${d == null || hide() ? '' : fmtKRW(d, { plus: true })}</td><td><button class="x-btn" type="button" data-del="${s.date}" aria-label="기록 지우기">×</button></td></tr>`; }).join('')}</tbody></table></div></div></div>`;
   if (snaps.length >= 2) lineChart($('#hChart', B), { series: [{ name: '총자산', color: css('--series-1'), area: true, data: snaps.map((s) => [Date.parse(s.date), val(s)]) }], yFmt: (x, ax) => (hide() ? '•' : ax ? fmtKRWShort(x) : fmtKRW(x)), readout: isMobile() ? $('#hReadout', B) : null });

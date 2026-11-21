@@ -81,28 +81,82 @@ export function lineChart(elm, { series, yFmt = (v) => v, log = false, readout =
   const c = mount(elm);
   if (!c) return null;
   const draw = () => {
+    const overlay = !isMobile() && series.some((x) => x.endText);
     c.setOption({
       ...base(),
       tooltip: { ...tooltip(yFmt, isTime && !xType), formatter: xFmt ? ((ps) => tooltipFmt(yFmt, false)((Array.isArray(ps) ? ps : [ps]).map((p) => ({ ...p, axisValue: xFmt(p.axisValue ?? p.value?.[0]) })))) : tooltip(yFmt, isTime && !xType).formatter },
-      grid: grid ? { ...base().grid, ...grid } : { ...base().grid, right: series.some((x) => x.endLabel) && !isMobile() ? (series.some((x) => x.endRich) ? 118 : 96) : 16 },
-      xAxis: { type: xType || (isTime ? 'time' : 'category'), min: xMin ?? undefined, max: xMax ?? undefined, ...axisCommon(), splitLine: { show: false }, axisLabel: { color: css('--text-3'), fontSize: 12, hideOverlap: true, formatter: xFmt || (isTime ? { year: '{yyyy}', month: '{yy}.{MM}', day: '{MM}.{dd}' } : undefined) } },
+      grid: grid ? { ...base().grid, ...grid } : { ...base().grid, right: overlay ? 132 : series.some((x) => x.endLabel) && !isMobile() ? (series.some((x) => x.endRich) ? 118 : 96) : 16 },
+      xAxis: { type: xType || (isTime ? 'time' : 'category'), boundaryGap: xType === 'category' ? false : undefined, min: xMin ?? undefined, max: xMax ?? undefined, ...axisCommon(), splitLine: { show: false }, axisLabel: { color: css('--text-3'), fontSize: 12, hideOverlap: true, formatter: xFmt || (isTime ? { year: '{yyyy}', month: '{yy}.{MM}', day: '{MM}.{dd}' } : undefined) } },
       yAxis: { type: log ? 'log' : 'value', scale: !log && yMin == null, min: yMin ?? undefined, max: yMax ?? undefined, ...axisCommon(), axisLabel: { color: css('--text-3'), fontSize: 12, formatter: (v) => yFmt(v, true) } },
       series: series.map((s) => ({
-        name: s.name, type: 'line', data: s.data, showSymbol: false, symbolSize: 8, sampling: 'lttb', step: s.step || false,
+        name: s.name, type: 'line', data: s.data, showSymbol: false, symbolSize: 8, sampling: s.stack ? undefined : 'lttb', step: s.step || false, stack: s.stack,
         lineStyle: { width: s.width ?? 2, color: s.color, type: s.dashed ? 'dashed' : 'solid' }, itemStyle: { color: s.color },
         areaStyle: s.area ? { color: s.color, opacity: s.areaOpacity ?? 0.12 } : undefined,
         emphasis: s.focus ? { focus: 'series', lineStyle: { width: (s.width ?? 2) + 1 } } : { disabled: true }, blur: s.focus ? { lineStyle: { opacity: 0.15 }, areaStyle: { opacity: 0.03 } } : undefined, z: s.z ?? 2, tooltipHide: s.tooltipHide, triggerLineEvent: !!s.focus,
         markLine: s.markLine, markPoint: s.markPoint, markArea: s.markArea,
-        endLabel: s.endLabel ? { show: !isMobile(), formatter: s.endLabel, color: css('--text-2'), fontSize: 12, distance: 8, ...(s.endRich ? { rich: { n: { color: css('--text-3'), fontSize: 11, lineHeight: 15 }, v: { color: s.color, fontSize: 15, fontWeight: 700, lineHeight: 19 }, c: { color: css('--text-2'), fontSize: 11, lineHeight: 15 } } } : {}) } : undefined,
-        labelLayout: s.endRich ? { moveOverlap: 'shiftY' } : undefined,
+        endLabel: s.endLabel && !overlay ? { show: !isMobile(), formatter: s.endLabel, color: css('--text-2'), fontSize: 12, distance: 8, ...(s.endRich ? { rich: { n: { color: css('--text-3'), fontSize: 11, lineHeight: 15 }, v: { color: s.color, fontSize: 15, fontWeight: 700, lineHeight: 19 }, c: { color: css('--text-2'), fontSize: 11, lineHeight: 15 } } } : {}) } : undefined,
+        labelLayout: s.endRich && !overlay ? { moveOverlap: 'shiftY' } : undefined,
       })),
       ...(markLine || {}),
     }, true);
     bindReadout(c, readout, yFmt, xFmt);
+    if (overlay) bindEndOverlay(c, elm, series); else elm.querySelector(':scope > .end-ov')?.remove();
   };
   c.__redraw = draw;
   draw();
   return c;
+}
+
+/**
+ * 선 끝 라벨 겹침 정리(Fable 보류 §4): 오른쪽 여백에 라벨을 세로로 펼쳐 놓고, 선 끝과 라벨을 꺾은 선으로 잇는다.
+ * series[i].endText = {name, value, sub, cls}. 라벨에 손을 올리면 그 선이 강조된다.
+ */
+function bindEndOverlay(c, elm, series) {
+  let ov = elm.querySelector(':scope > .end-ov');
+  if (!ov) { ov = document.createElement('div'); ov.className = 'end-ov'; elm.appendChild(ov); }
+  let raf = 0;
+  const place = () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      if (!elm.isConnected) return;
+      const items = [];
+      series.forEach((s, si) => {
+        if (!s.endText || !s.data?.length) return;
+        const p = s.data[s.data.length - 1];
+        const xy = c.convertToPixel({ seriesIndex: si }, p);
+        if (!xy || !isFinite(xy[1])) return;
+        items.push({ si, s, px: xy[0], py: xy[1] });
+      });
+      const W = elm.clientWidth, Hh = elm.clientHeight;
+      const top = 6, bottom = Hh - 24;
+      items.sort((a, b) => a.py - b.py);
+      const fit = (h) => { // 위에서부터 겹치지 않게 내리고, 바닥을 넘으면 거꾸로 올림
+        const pos = items.map((it) => it.py - h / 2);
+        for (let i = 0; i < pos.length; i++) pos[i] = Math.max(pos[i], i ? pos[i - 1] + h + 3 : top);
+        const n = pos.length - 1;
+        if (n >= 0 && pos[n] + h > bottom) { pos[n] = bottom - h; for (let i = n - 1; i >= 0; i--) pos[i] = Math.min(pos[i], pos[i + 1] - h - 3); }
+        return pos;
+      };
+      let mode = 'full', h = 48, pos = fit(h);
+      if (pos.length && pos[0] < top - 1) { mode = 'mid'; h = 32; pos = fit(h); }
+      if (pos.length && pos[0] < top - 1) { mode = 'min'; h = 18; pos = fit(h); }
+      const gx = Math.max(...items.map((it) => it.px), 0);
+      const lx = Math.min(W - 124, gx + 16);
+      const lines = items.map((it, i) => { const ly = pos[i] + h / 2; return `<path d="M${it.px + 2} ${it.py}H${lx - 8}L${lx - 2} ${ly}" stroke="${it.s.color}" stroke-width="1" fill="none" opacity=".7"/>`; }).join('');
+      ov.innerHTML = `<svg class="end-ov-lines" width="${W}" height="${Hh}" aria-hidden="true">${lines}</svg>` + items.map((it, i) => {
+        const t = it.s.endText;
+        return `<button type="button" class="end-lb ${mode}" data-si="${it.si}" style="left:${lx}px;top:${pos[i]}px;--c:${it.s.color}" title="${esc(t.name)}">${mode === 'min' ? `<b class="${t.cls || ''}">${esc(t.value)}</b> <span>${esc(t.name)}</span>` : `<span class="n">${esc(t.name)}</span><b class="${t.cls || ''}">${esc(t.value)}</b>${mode === 'full' && t.sub ? `<small>${esc(t.sub)}</small>` : ''}`}</button>`;
+      }).join('');
+      ov.querySelectorAll('.end-lb').forEach((b) => {
+        const si = +b.dataset.si;
+        b.onmouseenter = () => c.dispatchAction({ type: 'highlight', seriesIndex: si });
+        b.onmouseleave = () => c.dispatchAction({ type: 'downplay', seriesIndex: si });
+        b.onfocus = b.onmouseenter; b.onblur = b.onmouseleave;
+      });
+    });
+  };
+  c.off('finished'); c.on('finished', place);
+  place();
 }
 
 /** 묶음 막대(연도별 수익률 등). cats: ['2017',...], series:[{name, data:[v...], color}] */
