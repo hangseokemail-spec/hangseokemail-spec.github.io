@@ -174,7 +174,8 @@
       "cover": {
         "style": "paper",
         "mast": "SEOKONOMY",
-        "sub": "세코노미 · 주간 시장 경제지"
+        "sub": "세코노미 · 주간 시장 경제지",
+        "mastSize": 14
       },
       "read": "https://hangseokemail-spec.github.io/news/seokonomy/data/{date}.json 의 cover(headline·dek)와 reading(standfirst·glance·sections) — 이번 주 시장 움직임이 무엇을 말했는지의 결론",
       "summaryTone": "한다체"

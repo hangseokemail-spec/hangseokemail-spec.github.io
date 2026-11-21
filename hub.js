@@ -453,7 +453,7 @@
       el.className = 'cv cv-paper';
       const [, m, d] = (it.date || '--').split('-');
       el.innerHTML = `<div class="pt"><span>${esc(it.label || '')}</span><span>${it.date ? `${+m}.${+d}` : ''}</span></div>
-        <div class="pm">${esc(c.mast || p.name)}</div><div class="ps">${esc(c.sub || '')}</div>
+        <div class="pm"${c.mastSize ? ` style="font-size:${+c.mastSize}cqw"` : ''}>${esc(c.mast || p.name)}</div><div class="ps">${esc(c.sub || '')}</div>
         <div class="pa"></div><div class="ph">${esc(it.title || '')}</div>`;
       const svg = safeSVG(it.svg);
       if (svg) $('.pa', el).appendChild(svg);
