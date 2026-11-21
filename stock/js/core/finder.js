@@ -45,10 +45,10 @@ export function buildCandidates({ market = 'US', allowLev = false }) {
     for (const f of fixed) for (const reb of ['Q', 'A']) for (const t of timings(f.assets.length > 1, f.sig, f.sigName)) {
       if (f.assets.length === 1 && reb === 'A') continue; // 한 종목은 리밸런싱 무의미
       if (t.id === 'each' && reb === 'A') continue; // 종목별 신호는 매달 확인하므로 주기 차이 없음
-      out.push({ id: `${mk}-${f.id}-${reb}-${t.id}`, mk, fam: f.fam, kind: 'static', name: f.name, assets: f.assets, rebalance: f.assets.length === 1 ? 'none' : reb, timing: t.tm || null, tLabel: t.label });
+      out.push({ id: `${mk}-${f.id}-${reb}-${t.id}`, mk, fam: f.fam, kind: 'static', name: f.name, assets: f.assets, rebalance: f.assets.length === 1 ? 'none' : reb, timing: t.tm || null, tLabel: t.label, tId: t.id, sigName: f.sigName || M.sigName });
     }
     const rk = (rank, fam, name) => {
-      for (const reb of ['M', 'Q']) for (const t of timings(false)) out.push({ id: `${mk}-${fam}-${JSON.stringify(rank)}-${reb}-${t.id}`, mk, fam, kind: 'rank', name, rank, rebalance: reb, timing: t.tm || null, tLabel: t.label });
+      for (const reb of ['M', 'Q']) for (const t of timings(false)) out.push({ id: `${mk}-${fam}-${JSON.stringify(rank)}-${reb}-${t.id}`, mk, fam, kind: 'rank', name, rank, rebalance: reb, timing: t.tm || null, tLabel: t.label, tId: t.id, sigName: M.sigName });
     };
     const stockName = mk === 'US' ? '미국 대형주' : '국내 대형주';
     for (const n of [3, 5, 10]) rk({ group: M.stock, metric: 'mcap', from: 1, top: n, weighting: 'equal' }, '대형주', `${stockName} 시가총액 상위 ${n}개`);
@@ -60,8 +60,8 @@ export function buildCandidates({ market = 'US', allowLev = false }) {
       if (allowLev) rk({ group: M.etf, metric: 'mom', from: 1, top: n, lookback: lb, skip: 0, weighting: 'equal', excludeCats: ['inv'] }, '레버리지', `${etfName}(레버리지 포함, 인버스 제외) 중 최근 ${lb}개월 수익률 상위 ${n}개`);
     }
     if (mk === 'US') {
-      for (const lb of [3, 6, 12]) for (const t of timings(false)) out.push({ id: `US-sector-${lb}-${t.id}`, mk, fam: '섹터 순환', kind: 'rank', name: `미국 11개 섹터 ETF 중 최근 ${lb}개월 수익률 상위 3개`, rank: { group: 'US_ETF', metric: 'mom', from: 1, top: 3, lookback: lb, skip: 0, weighting: 'equal', universe: SECTORS }, rebalance: 'M', timing: t.tm || null, tLabel: t.label });
-      out.push({ id: 'US-gem', mk, fam: '듀얼 모멘텀', kind: 'rank', name: '미국(SPY)과 선진국(EFA) 중 12개월 수익률이 높은 하나', rank: { group: 'US_ETF', metric: 'mom', from: 1, top: 1, lookback: 12, skip: 0, weighting: 'equal', universe: ['SPY', 'EFA'] }, rebalance: 'M', timing: timings(false)[2].tm, tLabel: '단, S&P 500의 12개월 수익률이 단기채보다 낮으면 미국 국채(IEF)로' });
+      for (const lb of [3, 6, 12]) for (const t of timings(false)) out.push({ id: `US-sector-${lb}-${t.id}`, mk, fam: '섹터 순환', kind: 'rank', name: `미국 11개 섹터 ETF 중 최근 ${lb}개월 수익률 상위 3개`, rank: { group: 'US_ETF', metric: 'mom', from: 1, top: 3, lookback: lb, skip: 0, weighting: 'equal', universe: SECTORS }, rebalance: 'M', timing: t.tm || null, tLabel: t.label, tId: t.id, sigName: M.sigName });
+      out.push({ id: 'US-gem', mk, fam: '듀얼 모멘텀', kind: 'rank', name: '미국(SPY)과 선진국(EFA) 중 12개월 수익률이 높은 하나', rank: { group: 'US_ETF', metric: 'mom', from: 1, top: 1, lookback: 12, skip: 0, weighting: 'equal', universe: ['SPY', 'EFA'] }, rebalance: 'M', timing: timings(false)[2].tm, tLabel: '단, S&P 500의 12개월 수익률이 단기채보다 낮으면 미국 국채(IEF)로', tId: 'abs', sigName: M.sigName });
     }
   }
   return out;
@@ -81,14 +81,80 @@ export function josa(word, pair) {
   return word + (has ? a : b);
 }
 
-/** 규칙 → 한 문장 */
-export function candSentence(c) {
-  let what;
-  if (c.kind === 'static' && c.assets.length === 1) what = `${c.name.replace(/ 하나만$/, '')}만 들고 있기`;
-  else if (c.kind === 'static') what = `${c.name}${/\(/.test(c.name) ? '' : `(${c.assets.map(([k, w]) => `${assetInfo(k)?.m === 'KR' ? (assetInfo(k)?.n || k) : k} ${w}%`).join(' · ')})`}로 담고 ${c.rebalance === 'A' ? '매년 말' : '분기마다'} 비중 되돌리기`;
-  else what = `${josa(c.name, '을/를')} 같은 비중으로 담고 ${c.rebalance === 'Q' ? '분기마다' : '매월 말'} 다시 고르기`;
-  return `${what}${c.tLabel ? ` · ${c.tLabel}` : ''}`;
+/** 종목 표시: 미국은 티커, 국내는 이름 */
+const keyLabel = (k) => (assetInfo(k)?.m === 'KR' ? (assetInfo(k)?.n || k) : k);
+/** 한 종목 후보의 이름: '나스닥100(QQQ)' */
+function singleLabel(c) {
+  const base = c.name.replace(/ 하나만$/, '');
+  return /\(/.test(base) ? base : `${base}(${keyLabel(c.assets[0][0])})`;
 }
+const REB_WORD = { M: '매달 말', Q: '분기 말(3·6·9·12월 말)', A: '매년 12월 말' };
+function cashLabel(c) { const M = MKT[c.mk]; const k = c.timing?.to; return k === M.cash ? M.cashName : k === M.bond ? M.bondName : (assetInfo(k)?.n || k); }
+const SHORT = { BIL: 'BIL', IEF: 'IEF', '153130': '단기채권', '148070': '국고채', SPY: 'SPY', QQQ: 'QQQ', '069500': '코스피200' };
+const shortOf = (k) => SHORT[k] || keyLabel(k);
+function sigLabel(c) {
+  const k = c.timing?.signal;
+  if (k === 'each') return '각 종목';
+  if (c.sigName && c.sigName !== '그 ETF') return c.sigName;
+  return { SPY: 'S&P 500(SPY)', QQQ: '나스닥100(QQQ)', '069500': '코스피200(KODEX 200)' }[k] || keyLabel(k);
+}
+
+/**
+ * 규칙 → 그대로 따라 할 수 있는 행동 규칙
+ * {title, short, steps:[{k:'평소'|'다시 고르기'|'비중 맞추기'|'확인'|'팔기'|'돌아오기', t}]}
+ * 계산과 같은 뜻: 월말 종가로 판단, 백테스트 탭은 다음 거래일 종가에 거래.
+ */
+export function candRule(c) {
+  const steps = [];
+  const tm = c.timing, tId = c.tId || (tm ? (tm.signal === 'each' ? 'each' : tm.sell?.type === 'dd' ? 'dd' : tm.sell?.type === 'ret' ? 'abs' : 'ma') : null);
+  let hold;
+  if (c.kind === 'static' && c.assets.length === 1) {
+    hold = `${singleLabel(c)} 보유`;
+    steps.push({ k: '평소', t: `${josa(singleLabel(c), '을/를')} 100% 들고 있어요.${tm ? '' : ' 사고팔지 않고 계속 들고 가요.'}` });
+  } else if (c.kind === 'static') {
+    const mix = c.assets.map(([k, w]) => `${keyLabel(k)} ${w}%`).join(' · ');
+    hold = /\(/.test(c.name) ? c.name : `${c.name}(${mix})`;
+    steps.push({ k: '평소', t: `${mix}로 나눠 담아요.` });
+    steps.push({ k: '비중 맞추기', t: `${REB_WORD[c.rebalance] || '정해진 날'}에 비중이 처음과 달라졌으면 처음 비중으로 되돌려요.` });
+  } else {
+    const r = c.rank || {};
+    const one = r.top === 1;
+    hold = one ? c.name : `${c.name} 같은 비중`;
+    const pool = /STOCK/.test(r.group) && r.metric && r.metric !== 'mcap' ? ' 후보는 그달 시가총액 상위 50개예요.' : '';
+    steps.push({ k: '다시 고르기', t: one ? `${REB_WORD[c.rebalance] || '매달 말'}에 ${josa(c.name, '을/를')} 골라 전부 사요. 고른 것이 바뀌면 갈아타요.` : `${REB_WORD[c.rebalance] || '매달 말'}에 ${josa(c.name, '을/를')} 새로 뽑아 같은 비중으로 사요. 순위에서 빠진 종목은 팔아요.${pool}` });
+  }
+  let tag = '';
+  if (tm) {
+    const sig = sigLabel(c), cash = cashLabel(c);
+    const sameAsHeld = c.kind === 'static' && c.assets.length === 1 && c.assets[0][0] === tm.signal;
+    const sp = sameAsHeld ? '' : `${shortOf(tm.signal)} `;
+    const to = josa(shortOf(tm.to), '으로/로');
+    steps.push({ k: '확인', t: '매달 마지막 거래일 종가로 한 번만 확인하고, 사고팔 일이 생기면 다음 거래일에 거래해요.' });
+    const back = c.kind === 'rank' ? '그때의 순위로 다시 골라 사요' : (c.assets.length === 1 ? `${josa(keyLabel(c.assets[0][0]), '을/를')} 다시 사요` : '처음 비중대로 다시 사요');
+    if (tId === 'ma') {
+      tag = `${sp}10개월선 아래면 ${to} 피신, 다시 위면 복귀`;
+      steps.push({ k: '팔기', t: `${sig} 종가가 10개월 평균선(최근 10번 월말 종가의 평균)보다 낮으면 → 전부 팔고 ${josa(cash, '을/를')} 사요.` });
+      steps.push({ k: '돌아오기', t: `${sig} 종가가 다시 10개월 평균선 이상이 되면 → ${josa(cash, '을/를')} 팔고 ${back}.` });
+    } else if (tId === 'abs') {
+      tag = `${sp}12개월 수익률이 단기채보다 낮으면 ${to}, 높아지면 복귀`;
+      steps.push({ k: '팔기', t: `${sig}의 최근 12개월 수익률이 단기채(${MKT[c.mk].cash === '153130' ? 'KODEX 단기채권' : 'BIL'})의 12개월 수익률보다 낮으면 → 전부 팔고 ${josa(cash, '을/를')} 사요.` });
+      steps.push({ k: '돌아오기', t: `다시 단기채보다 높아지면 → ${josa(cash, '을/를')} 팔고 ${back}.` });
+    } else if (tId === 'dd') {
+      tag = `${sp}고점 대비 −15%면 ${to} 피신, 10개월선 위면 복귀`;
+      steps.push({ k: '팔기', t: `${josa(sig, '이/가')} 지금까지의 최고가보다 15% 넘게 떨어져 있으면 → 전부 팔고 ${josa(cash, '을/를')} 사요.` });
+      steps.push({ k: '돌아오기', t: `${sig} 종가가 10개월 평균선 위로 올라오면 → ${josa(cash, '을/를')} 팔고 ${back}.` });
+    } else if (tId === 'each') {
+      tag = `종목마다 10개월선 아래면 그 몫만 ${to}, 다시 위면 복귀`;
+      steps.push({ k: '팔기', t: `종목마다 따로 봐요. 어떤 종목의 종가가 자기 10개월 평균선보다 낮으면 → 그 종목 몫만 팔아 ${josa(cash, '을/를')} 사요.` });
+      steps.push({ k: '돌아오기', t: '그 종목이 다시 자기 10개월 평균선 이상이 되면 → 그 몫을 다시 사요.' });
+    }
+  }
+  const title = tm ? `${hold} · ${tag}` : (c.kind === 'static' && c.assets.length === 1 ? `${singleLabel(c)}만 계속 들고 있기` : c.kind === 'static' ? `${hold}, ${REB_WORD[c.rebalance] || ''} 비중 맞추기` : `${hold}, ${(REB_WORD[c.rebalance] || '').replace(/\(.*\)/, '')} ${c.rank?.top === 1 ? '갈아타기' : '교체'}`);
+  return { title, steps };
+}
+
+/** 규칙 → 한 문장(표·툴팁용): 돌아오는 조건까지 넣는다 */
+export function candSentence(c) { return candRule(c).title; }
 
 // ------------------------------------------------------------------ 월 단위 시계열 준비
 async function monthlyFrame(groups, extraKeys, base, fxNeeded) {
@@ -190,7 +256,7 @@ export function simulateMonthly(c, F, yms, base, feeRate = 0.001) {
   let inMkt = true, eachIn = null;
   const values = [1];
   let h = new Map(); // key → 금액
-  let turnover = 0;
+  let turnover = 0, nOut = 0, outMonths = 0;
   const effective = () => {
     const w = new Map(); let used = 0;
     for (const [k, x] of base_w) {
@@ -217,10 +283,12 @@ export function simulateMonthly(c, F, yms, base, feeRate = 0.001) {
   if (c.kind === 'static') base_w = c.assets.map(([k, w]) => [k, w / 100]);
   else { base_w = rankPick(table, c.rank, mi, F.conv, base, yms[0]); if (!base_w) return null; }
   inMkt = c.timing ? signalState(c.timing, sigSer, cashSer, yms, 0, true) : true;
+  if (c.timing && c.timing.signal !== 'each' && !inMkt) nOut = 1; // 처음부터 피신으로 시작
   reset(1, effective());
   turnover = 0;
   for (let t = 1; t <= T; t++) {
     tNow = t;
+    if (c.timing && c.timing.signal !== 'each' && !inMkt) outMonths++; // 이번 달을 피신한 채 보냄
     let V = 0;
     for (const [k, x] of h) {
       const s = k === 'CASH' ? null : serOf(k);
@@ -231,7 +299,7 @@ export function simulateMonthly(c, F, yms, base, feeRate = 0.001) {
     values.push(V);
     if (t === T) break;
     let change = false;
-    if (c.timing) { const ns = signalState(c.timing, sigSer, cashSer, yms, t, inMkt); if (ns !== inMkt) { inMkt = ns; change = true; } if (c.timing.signal === 'each') change = true; }
+    if (c.timing) { const ns = signalState(c.timing, sigSer, cashSer, yms, t, inMkt); if (ns !== inMkt) { if (!ns && c.timing.signal !== 'each') nOut++; inMkt = ns; change = true; } if (c.timing.signal === 'each') change = true; }
     if (c.rebalance !== 'none' && isReb(t)) {
       if (c.kind === 'rank') { const p = rankPick(table, c.rank, mi, F.conv, base, yms[t]); if (p) base_w = p; }
       change = true;
@@ -239,7 +307,9 @@ export function simulateMonthly(c, F, yms, base, feeRate = 0.001) {
     if (change) reset(V, effective());
   }
   void eachIn;
-  return { values, turnover: turnover / Math.max(1, T / 12) };
+  // 마지막 달 말 기준 지금 상태(종목별 신호는 제외)
+  const nowIn = c.timing && c.timing.signal !== 'each' ? signalState(c.timing, sigSer, cashSer, yms, T, inMkt) : null;
+  return { values, turnover: turnover / Math.max(1, T / 12), nOut, outMonths, nowIn, nowYm: yms[T] };
 }
 
 export function monthlyMetrics(values) {
@@ -282,7 +352,7 @@ export async function findStrategies(opts) {
       const m = monthlyMetrics(r.values);
       const half = Math.floor((yms.length - 1) / 2);
       const h1 = monthlyMetrics(r.values.slice(0, half + 1)), h2 = monthlyMetrics(r.values.slice(half));
-      if (m) out.push({ ...c, m, h1, h2, turnover: r.turnover, values: r.values, ok: m.cagr >= target && m.mdd >= limit });
+      if (m) out.push({ ...c, m, h1, h2, turnover: r.turnover, values: r.values, nOut: r.nOut, outMonths: r.outMonths, nowIn: r.nowIn, nowYm: r.nowYm, ok: m.cagr >= target && m.mdd >= limit });
     }
     if (i % 20 === 0) { onProgress?.(i + 1, cands.length, '계산'); await new Promise((res) => setTimeout(res, 0)); }
   }

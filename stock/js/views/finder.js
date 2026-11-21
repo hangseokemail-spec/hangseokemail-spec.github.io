@@ -2,7 +2,7 @@
 import { $, $$, store, toast, sheet } from '../ui/dom.js';
 import { fmtPct, esc, dirClass } from '../ui/format.js';
 import { mount, css, isMobile } from '../ui/charts.js';
-import { findStrategies, candSentence, candToBacktest } from '../core/finder.js';
+import { findStrategies, candSentence, candRule, candToBacktest } from '../core/finder.js';
 import { loadUniverse } from '../core/data.js';
 
 let root = null, last = null, busy = false, picked = null;
@@ -111,10 +111,19 @@ function spark(values, w = 120, h = 34) {
   const pts = values.map((v, i) => `${((i / (n - 1)) * w).toFixed(1)},${(h - 2 - ((v - lo) / (hi - lo || 1)) * (h - 4)).toFixed(1)}`).join(' ');
   return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 }
+/** 그대로 따라 할 수 있는 행동 규칙 + 과거에 몇 번 사고팔았나 + 지금 상태 */
+function ruleBlock(c, halfY) {
+  const r = candRule(c);
+  const yrs = Math.round(((c.values?.length || 1) - 1) / 12) || halfY * 2;
+  const stat = c.timing && c.nOut != null && c.timing.signal !== 'each'
+    ? `<p class="rc-stat">지난 ${yrs}년 동안 ${c.nOut ? `피신 <b>${c.nOut}번</b>, 피신해 있던 기간 합계 <b>${c.outMonths}개월</b>` : '한 번도 피신하지 않았어요'}${c.nowIn != null ? ` · <span class="rc-now ${c.nowIn ? 'in' : 'out'}">${fmtYm(c.nowYm)} 말 기준 ${c.nowIn ? '투자하는 때' : '피신해 있을 때'}</span>` : ''}</p>` : '';
+  return `<p class="rc-rule">${esc(r.title)}</p>
+    <ol class="rc-steps">${r.steps.map((x) => `<li><b>${esc(x.k)}</b><span>${esc(x.t)}</span></li>`).join('')}</ol>${stat}`;
+}
 function recCard(c, i, halfY) {
   return `<article class="rec-card${c.ok ? ' ok' : ''}">
     <div class="rc-top"><span class="rc-n">${i + 1}</span><span class="rc-fam">${esc(c.fam)}${c.mk === 'KR' ? ' · 국내' : ''}</span>${c.consistent ? '<span class="status-pill good" title="앞·뒤 절반 기간 모두 목표의 60% 이상, 낙폭도 한도의 1.25배 안">✓ 앞·뒤 모두 목표</span>' : '<span class="status-pill caution" title="한쪽 절반에서만 좋았어요">기간 편차 큼</span>'}</div>
-    <p class="rc-rule">${esc(candSentence(c))}</p>
+    ${ruleBlock(c, halfY)}
     <div class="rc-nums">
       <div><span class="lb">연수익률</span><b class="${dirClass(c.m.cagr)}">${fmtPct(c.m.cagr)}</b></div>
       <div><span class="lb">최대 낙폭</span><b>${fmtPct(c.m.mdd)}</b></div>
