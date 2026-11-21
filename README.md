@@ -72,7 +72,8 @@ PC·태블릿 가로는 표지를 크게 세운 카드, 태블릿 세로·휴대
 ```
 
 - `schedule`: `{"days":[…],"time":"HH:MM"}`(0=일 … 6=토, 한국 시각) 또는 분기마다 `{"every":"quarter","lagDays":45}`(분기 말 + 45일 = 13F 공시 기한).
-  - `schedule.days`: 0=일 … 6=토, `time`: 한국 시각. 다음 호 안내와 "예정보다 늦어지고 있어요" 표시에 씁니다. 비정기면 빼고 `statusText`를 씁니다.
+  - `schedule.days`: 0=일 … 6=토, `time`: 한국 시각.
+  - `"usMarket": true`이면 전날(미국 날짜)이 주말이거나 `usMarketClosed`(미국 증시 휴장일)인 한국 아침은 발행이 없는 날로 칩니다(Seok's Paper·풍향계). 휴장일 목록은 해마다 news-data의 `config/us_market_holidays.json`과 맞춰 더합니다. 다음 호 안내와 "예정보다 늦어지고 있어요" 표시에 씁니다. 비정기면 빼고 `statusText`를 씁니다.
 - `list`: 목록 배열이 있는 자리(배열이 파일 맨 위면 `""`). 각 항목에 `date`(YYYY-MM-DD)가 있어야 합니다.
 - `label`·`title`·`cover`·`link`: `{필드}` 자리에 그 호의 값이 들어갑니다. `{no|pad2}`는 두 자리(01)로 채웁니다.
 - `summary`: 카드에 넣을 핵심 한 문장. 후보를 여러 개 적으면 처음으로 값이 있는 것을 씁니다(예: `["{summary}", "{lead}"]`). `summaryAfter`는 그 글자 뒤만, `sentences`는 몇 문장을 쓸지(기본 1 = 첫 문장, -1 = 마지막 문장, 0 = 전부), `summaryHtml`은 호별 HTML에서 `selector`로 뽑습니다.

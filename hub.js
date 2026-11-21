@@ -69,10 +69,16 @@
     const n = Math.round((Date.parse(dayKey(now)) - Date.parse(dayKey(t))) / DAY);
     return n <= 0 ? '오늘' : n === 1 ? '어제' : n < 7 ? `${n}일 전` : fmtDay(dayKey(t));
   };
+  // usMarket: true 인 일정은 전날(미국 날짜)이 주말·휴장이면 그 한국 아침은 쉰다(Seok's Paper·풍향계).
+  const usClosed = (k) => {
+    const us = dayKey(Date.parse(k + 'T12:00:00Z') - DAY);
+    return [0, 6].includes(wdOf(us)) || ((state.cfg && state.cfg.usMarketClosed) || []).includes(us);
+  };
   const occ = (sch, now, dir) => {
-    for (let i = 0; i <= 8; i++) {
+    for (let i = 0; i <= 12; i++) {
       const k = dayKey(now + dir * i * DAY);
       if (!sch.days.includes(wdOf(k))) continue;
+      if (sch.usMarket && usClosed(k)) continue;
       const t = at(k, sch.time);
       if (dir < 0 ? t <= now : t > now) return t;
     }
@@ -181,6 +187,42 @@
         dateText: px ? `주가 ${px[1]}/${px[2]} 기준` : '',
         title: buys[0] && sells[0] ? `가장 많이 산 ${nm(buys[0])}, 가장 많이 판 ${nm(sells[0])}` : '',
         guru: { buys, sells, n: info.gurus_n || 0, qlabel: `${y}년 ${qn}분기` },
+      };
+    },
+
+    // Seok's Stock: 호가 없는 도구. 그 앱의 시세 파일로 대표 백테스트(기준 종목, 시작일부터 배당 재투자)를 계산해 표지에 쓴다.
+    async stock(s) {
+      const meta = await getJSON(s.meta);
+      const upd = meta.updated ? Date.parse(meta.updated) : null;
+      let bt = null;
+      try {
+        const o = await getJSON(fill(s.px, { k: s.bench }));
+        const ymd = (v) => { const t = String(v).replace(/-/g, ''); return Date.UTC(+t.slice(0, 4), +t.slice(4, 6) - 1, +t.slice(6, 8)); };
+        const n = o.c.length, day = new Array(n);
+        day[0] = ymd(o.d0);
+        for (let i = 1; i < n; i++) day[i] = day[i - 1] + o.dd[i - 1] * DAY;
+        const div = new Float64Array(n), pos = new Map(day.map((d, i) => [d, i]));
+        (o.dv || []).forEach(([d, a]) => { const i = pos.get(ymd(d)); if (i !== undefined) div[i] += a; });
+        const tr = new Float64Array(n); tr[0] = o.c[0];
+        for (let i = 1; i < n; i++) { const b = o.c[i - 1] > div[i] ? o.c[i - 1] - div[i] : o.c[i - 1]; tr[i] = tr[i - 1] * o.c[i] / b; }
+        const st = Math.max(0, day.findIndex((d) => d >= ymd(s.start || o.d0)));
+        const step = Math.max(1, Math.floor((n - st) / 90)), pts = [];
+        for (let i = st; i < n; i += step) pts.push([day[i], tr[i] / tr[st]]);
+        pts.push([day[n - 1], tr[n - 1] / tr[st]]);
+        bt = { x: tr[n - 1] / tr[st], from: day[st], to: day[n - 1], pts };
+      } catch (err) { bt = null; }
+      const y0 = bt ? new Date(bt.from).getUTCFullYear() : '';
+      const times = bt ? (bt.x >= 10 ? Math.round(bt.x) : bt.x.toFixed(1)) : '';
+      return {
+        key: null,
+        label: meta.fetched ? `종목 ${meta.fetched}개` : '',
+        dateText: upd ? `시세 ${fmtDay(dayKey(upd))} 갱신` : '',
+        title: bt ? `${y0}년 ${s.benchName || s.bench}에 넣은 돈은 지금 ${times}배` : '',
+        summary: s.summary || '',
+        stock: bt ? { ...bt, times, bench: s.bench, benchName: s.benchName || s.bench } : null,
+        status: upd ? (Date.now() - upd > 4 * DAY
+          ? { cls: 'late', text: `시세 갱신이 늦어지고 있어요 · 마지막 ${fmtDay(dayKey(upd))}` }
+          : { cls: 'ok', text: `시세 ${fmtWhen(upd, Date.now())} 갱신 · 매일 자동` }) : null,
       };
     },
 
@@ -337,7 +379,40 @@
     </svg>`;
   };
 
-  const coverShowsTitle = (p) => ['overlay', 'paper', 'type', 'tower', 'guru'].includes(p.cover && p.cover.style);
+  // Seok's Stock 표지: 앱처럼 어두운 바탕에 대표 백테스트(배당 재투자) 곡선, 로그 눈금.
+  const stockSVG = (B) => {
+    const X0 = 24, X1 = 276, Y0 = 344, Y1 = 196;
+    const lv = B.pts.map(([, v]) => Math.log(v)), lo = Math.min(0, ...lv), hi = Math.max(...lv);
+    const t0 = B.pts[0][0], t1 = B.pts[B.pts.length - 1][0];
+    const sx = (t) => X0 + (X1 - X0) * (t - t0) / Math.max(1, t1 - t0);
+    const sy = (v) => Y0 - (Y0 - Y1) * (Math.log(v) - lo) / Math.max(1e-9, hi - lo);
+    const line = B.pts.map(([t, v], i) => `${i ? 'L' : 'M'}${sx(t).toFixed(1)} ${sy(v).toFixed(1)}`).join('');
+    const area = `${line}L${X1} ${Y0}L${X0} ${Y0}Z`;
+    const yA = new Date(t0).getUTCFullYear(), yB = new Date(t1).getUTCFullYear();
+    const ticks = [];
+    for (let y = Math.ceil(yA / 10) * 10; y < yB; y += 10) ticks.push(y);
+    const tk = ticks.map((y) => { const x = sx(Date.UTC(y, 0, 1)); return `<line x1="${x.toFixed(1)}" y1="${Y1 - 6}" x2="${x.toFixed(1)}" y2="${Y0}" stroke="#ffffff" stroke-opacity=".07"/><text x="${x.toFixed(1)}" y="${Y0 + 16}" fill="#7d8a8c" font-size="10" text-anchor="middle">${y}</text>`; }).join('');
+    const ex = sx(t1), ey = sy(B.pts[B.pts.length - 1][1]);
+    return `<svg viewBox="0 0 300 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(B.benchName)} ${yA}년부터 ${B.times}배">
+      <defs><linearGradient id="sbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#14201f"/><stop offset="1" stop-color="#0b1112"/></linearGradient>
+        <linearGradient id="sar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#19c3a6" stop-opacity=".45"/><stop offset="1" stop-color="#19c3a6" stop-opacity="0"/></linearGradient></defs>
+      <rect width="300" height="400" fill="url(#sbg)"/>
+      <rect x="22" y="26" width="26" height="26" rx="7" fill="#00756b"/>
+      <path d="M28 44l5-6 4 3 6-8" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="56" y="45" fill="#fff" font-size="19" font-weight="800" letter-spacing="-.4">Seok's Stock</text>
+      <text x="22" y="74" fill="#8fa3a5" font-size="11.5">백테스트 · 목표·노후 · 내 자산</text>
+      <text x="22" y="122" fill="#9fb5b6" font-size="12">${yA}년 1월 ${esc(B.benchName)}에 넣은 돈은</text>
+      <text x="22" y="168" fill="#2ee0bf" font-size="44" font-weight="900" letter-spacing="-1.5">${esc(B.times)}배</text>
+      <text x="${22 + String(B.times).length * 25 + 40}" y="168" fill="#9fb5b6" font-size="12">${yB}년 지금</text>
+      ${tk}
+      <path d="${area}" fill="url(#sar)"/>
+      <path d="${line}" stroke="#2ee0bf" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4" fill="#2ee0bf" stroke="#0b1112" stroke-width="2"/>
+      <text x="22" y="384" fill="#5f6e70" font-size="9.5">배당 재투자 · 달러 기준 · 과거 성과는 미래를 보장하지 않아요</text>
+    </svg>`;
+  };
+
+  const coverShowsTitle = (p) => ['overlay', 'paper', 'type', 'tower', 'guru', 'stock'].includes(p.cover && p.cover.style);
 
   function buildCover(p, it) {
     const st = (p.cover && p.cover.style) || 'plain';
@@ -355,7 +430,10 @@
       return im;
     };
 
-    if (st === 'guru' && it.guru) {
+    if (st === 'stock' && it.stock) {
+      el.className = 'cv cv-wind';
+      el.innerHTML = stockSVG(it.stock);
+    } else if (st === 'guru' && it.guru) {
       el.className = 'cv cv-wind';
       el.innerHTML = guruSVG(it.guru, c);
     } else if (st === 'tower') {
@@ -415,6 +493,7 @@
 
   function statusOf(p, it, now) {
     if (it.empty) return { cls: 'idle', text: p.emptyText || '첫 호를 기다리는 중' };
+    if (it.status) return it.status;
     if (!p.schedule) return { cls: p.group === 'always' ? 'idle' : 'ok', text: fill(p.statusText, it) || '언제든 열려 있어요' };
     if (p.schedule.every === 'quarter' && it.period) {
       const nq = nextQuarterEnd(it.period), due = Date.parse(nq + 'T00:00:00+09:00') + (p.schedule.lagDays || 45) * DAY;
