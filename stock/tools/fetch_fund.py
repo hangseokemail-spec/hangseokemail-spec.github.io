@@ -662,9 +662,26 @@ def probe_kr(arg):
     print("자료 없음", j.get("status"), j.get("message"))
 
 
+def kr_meta():
+    """meta.json의 국내 실적 기록만 KR_STOCK.json에 맞춰 다시 쓴다(Actions 저장 단계에서 최신 저장소 위에 덮을 때).
+    국내 자료가 바뀌었을 때만 updated(앱 캐시 버전)를 지금으로 바꾼다."""
+    pub_p, meta_p = os.path.join(FUND, "KR_STOCK.json"), os.path.join(DATA, "meta.json")
+    if not os.path.exists(pub_p):
+        return
+    pub = json.load(open(pub_p))
+    meta = json.load(open(meta_p))
+    old = meta.get("fund", {}).get("KR_STOCK", {})
+    if old.get("updated") == pub.get("updated"):
+        return
+    meta.setdefault("fund", {})["KR_STOCK"] = {"updated": pub.get("updated"), "tickers": sum(1 for v in pub["t"].values() if v.get("q")), "nodata": len(pub.get("nodata", []))}
+    meta["updated"] = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    json.dump(meta, open(meta_p, "w"), ensure_ascii=False, indent=1)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kr-probe", help="국내 계정 확인: 종목코드:연도:보고서코드")
+    ap.add_argument("--kr-meta", action="store_true", help="meta.json의 국내 실적 기록만 다시 쓰기")
     ap.add_argument("--full", action="store_true")
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--limit", type=int)
@@ -675,6 +692,8 @@ def main():
     a = ap.parse_args()
     if a.kr_probe:
         return probe_kr(a.kr_probe)
+    if a.kr_meta:
+        return kr_meta()
     only = set(a.only) if a.only else None
     if not a.kr_only:
         run_us(full=a.full, only=only, limit=a.limit)

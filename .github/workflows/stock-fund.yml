@@ -56,13 +56,21 @@ jobs:
       - name: commit
         if: steps.key.outputs.ok == 'true' && (inputs.probe == '' || inputs.probe == null)
         run: |
+          # 수동 실행은 실행을 건 때의 저장소로 시작하므로, 저장할 때는 늘 최신 저장소 위에 국내 실적 파일만 덮고
+          # meta.json의 국내 기록은 그 자리에서 다시 쓴다(시세 봇이 그사이 meta.json을 고쳐도 부딪히지 않게)
           git config user.name "seoks-stock-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add stock/data/fund stock/data/meta.json
-          if git diff --cached --quiet; then echo "변경 없음"; exit 0; fi
-          git commit -m "stock: 국내 실적 갱신 $(date -u +%Y-%m-%dT%H:%MZ)"
+          mkdir -p /tmp/kr
+          cp stock/data/fund/KR_STOCK.json stock/data/fund/KR_raw.json stock/data/fund/dart_corp.json /tmp/kr/ 2>/dev/null || true
+          ls /tmp/kr
           for i in 1 2 3 4 5; do
-            if git pull --rebase origin main && git push origin HEAD:main; then exit 0; fi
+            git fetch -q --depth 1 origin main && git reset -q --hard origin/main
+            cp /tmp/kr/* stock/data/fund/
+            python stock/tools/fetch_fund.py --kr-meta
+            git add stock/data/fund stock/data/meta.json
+            if git diff --cached --quiet; then echo "변경 없음"; exit 0; fi
+            git commit -q -m "stock: 국내 실적 갱신 $(date -u +%Y-%m-%dT%H:%MZ)"
+            if git push origin HEAD:main; then exit 0; fi
             sleep $((i*10))
           done
           exit 1
