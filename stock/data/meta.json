@@ -1,5 +1,5 @@
 {
- "updated": "2026-11-21T12:14:57Z",
+ "updated": "2026-11-21T12:15:58Z",
  "fetched": 884,
  "incremental": 884,
  "full": 0,
@@ -11,6 +11,11 @@
    "updated": "2026-11-21T12:14:57Z",
    "tickers": 130,
    "nodata": 33
+  },
+  "US_STOCK": {
+   "updated": "2026-11-21T12:04:33Z",
+   "tickers": 159,
+   "nodata": 6
   }
  }
 }
