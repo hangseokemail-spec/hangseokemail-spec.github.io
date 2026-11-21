@@ -32,7 +32,21 @@ function find_(sh, h) {
 function set_(sh, row, key, val) { sh.getRange(row, HEAD.indexOf(key) + 1).setValue(val); }
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
-function doGet(e) { return out_(handle_(e.parameter || {})); }
+function doGet(e) {
+  const q = e.parameter || {};
+  if (!q.action) { // 브라우저로 열면: 권한 허용 뒤 동작 확인 화면
+    sheet_(); folder_();
+    const url = ScriptApp.getService().getUrl();
+    return HtmlService.createHtmlOutput('<meta name="viewport" content="width=device-width"><div style="font-family:sans-serif;max-width:560px;margin:40px auto;line-height:1.6"><h2>Seok\'s Stock 계정 저장소가 동작 중이에요 ✓</h2><p>아래 주소를 Claude에게 붙여 주세요.</p><p style="padding:12px;background:#eef;border-radius:8px;word-break:break-all"><b>' + url + '</b></p><p style="color:#666">계정 시트와 개인 데이터(암호화) 폴더는 내 드라이브에 만들어졌어요.</p></div>').setTitle("Seok's Stock 계정 저장소");
+  }
+  return out_(handle_(q));
+}
+/** 편집기에서 한 번 실행: 권한 허용 + 시트·폴더 만들기 */
+function setup() {
+  const sh = sheet_(), f = folder_();
+  Logger.log('계정 시트: ' + sh.getParent().getUrl());
+  Logger.log('데이터 폴더: ' + f.getUrl());
+}
 function doPost(e) { let q = {}; try { q = JSON.parse(e.postData.contents); } catch (err) { return out_({ ok: false, error: 'bad json' }); } return out_(handle_(q)); }
 
 function handle_(q) {

@@ -1,0 +1,11 @@
+import {contrast,oklch,f,dE,cvd} from './lib.mjs';
+const [,,P,C,surf,bm,up,down]=process.argv; const Ps=P.split(','), Cs=C.split(',');
+const score=(a,b)=>Math.min(dE(a,b)/15, cvd(a,b)/8);
+const all=[...Ps,...Cs]; const lab=['P1','P2','P3','C1','C2','C3','C4','C5','C6'];
+const pairsOf=(idx)=>{const o=[];for(let i=0;i<idx.length;i++)for(let j=i+1;j<idx.length;j++)o.push([idx[i],idx[j]]);return o;};
+const tier=(idx)=>{ let wn=99,wc=99,wp=null,wcp=null; for(const [i,j] of pairsOf(idx)){ const n=dE(all[i],all[j]), c=cvd(all[i],all[j]); if(n<wn){wn=n;wp=lab[i]+'-'+lab[j];} if(c<wc){wc=c;wcp=lab[i]+'-'+lab[j];} } return `nΔE≥${f(wn,1)}(${wp}) CVD≥${f(wc,1)}(${wcp})`; };
+console.log('P1+C1..C3   :', tier([0,3,4,5]));
+console.log('P1..P3+C1..3:', tier([0,1,2,3,4,5]));
+console.log('all 9       :', tier([0,1,2,3,4,5,6,7,8]));
+console.log('min contrast vs surface:', f(Math.min(...all.map(h=>contrast(h,surf)))), ' | C vs BM min nΔE:', f(Math.min(...Cs.map(h=>dE(h,bm))),1), ' | C vs up/down min nΔE:', f(Math.min(...Cs.map(h=>Math.min(dE(h,up),dE(h,down)))),1));
+console.log('contrast each:', all.map((h,i)=>lab[i]+' '+f(contrast(h,surf))).join(', '));
