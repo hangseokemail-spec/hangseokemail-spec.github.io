@@ -630,12 +630,33 @@
     const cw = Math.floor((w - (n - 1) * CW_GAP) / n);
     if (cw >= CW_MIN) board.style.setProperty('--cw', cw + 'px');
   }
-  function equalize() {
+  // 탭마다 한 화면: 탭 막대를 위에 붙였을 때 카드가 창 아래로 넘치면 카드 안 여백·글 간격을 좁힌다(.tight).
+  // 표지 비율(3:4)과 글자는 그대로라 표지 그림이 잘리지 않는다. 좁혀도 안 들어가면(전체 탭처럼) 원래 크기로 둔다.
+  // 휴대폰 세로 목록은 원래 내려 읽으니 건드리지 않는다. 요약 길이가 매일 달라도 열 때마다 다시 잰다.
+  const LIST_MODE = window.matchMedia ? matchMedia('(max-width:600px) and (orientation:portrait)') : { matches: false };
+  const FIT_PAD = 10;
+  function fitsScreen() {
+    const main = $('#main'), grid = $('#grid'), bar = $('.tabsbar'), nav = $('.gnav');
+    if (!main || !grid || !bar || !nav) return true;
+    const need = grid.getBoundingClientRect().bottom - main.getBoundingClientRect().top; // 스크롤과 상관없는 탭 막대 아래 높이
+    const room = innerHeight - nav.getBoundingClientRect().height - bar.getBoundingClientRect().height - FIT_PAD;
+    return need <= room;
+  }
+  function sizeCards(cards) {
     document.querySelectorAll('.card').forEach((c) => { c.style.minHeight = ''; });
-    const cards = [...document.querySelectorAll('.card')].filter((c) => !c.hidden);
     fitCols(cards);
     const max = Math.max(0, ...cards.map((c) => c.getBoundingClientRect().height));
     if (max > 0) cards.forEach((c) => { c.style.minHeight = Math.ceil(max) + 'px'; });
+  }
+  function equalize() {
+    const board = $('#main');
+    const cards = [...document.querySelectorAll('.card')].filter((c) => !c.hidden);
+    if (board) board.classList.remove('tight');
+    sizeCards(cards);
+    if (!board || !cards.length || LIST_MODE.matches || fitsScreen()) return;
+    board.classList.add('tight');
+    sizeCards(cards);
+    if (!fitsScreen()) { board.classList.remove('tight'); sizeCards(cards); }
   }
   let eqTimer = 0;
   const equalizeSoon = () => { clearTimeout(eqTimer); eqTimer = setTimeout(equalize, 120); };
