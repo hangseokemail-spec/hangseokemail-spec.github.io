@@ -8,7 +8,7 @@
     {
       "id": "market",
       "name": "시장·투자",
-      "note": "매일 아침 신문과 풍향계, 분기마다 구루들의 13F, 그리고 백테스트 도구."
+      "note": "매일 아침 신문과 풍향계, 토요일 아침 주간지, 분기마다 구루들의 13F, 그리고 백테스트 도구."
     },
     {
       "id": "science",
@@ -35,7 +35,7 @@
     {
       "id": "weekly",
       "name": "매주 나오는 것",
-      "tagline": "한 주를 담아 금요일 저녁에."
+      "tagline": "한 주를 담아 금요일 저녁·토요일 아침에."
     },
     {
       "id": "quarterly",
@@ -146,6 +146,37 @@
         "style": "wind"
       },
       "read": "https://hangseokemail-spec.github.io/seoks/data/comments/{date}.json 의 wind(verdict·headline·points·guide) — 풍향계 점수가 왜 그렇고 그래서 어떻게 할지",
+      "summaryTone": "한다체"
+    },
+    {
+      "id": "seokonomy",
+      "name": "SEOKONOMY",
+      "kind": "주간 경제지",
+      "desc": "한 주의 미국 시장을 읽는 주간 경제지",
+      "group": "weekly",
+      "tab": "market",
+      "url": "/news/seokonomy/",
+      "schedule": {
+        "days": [
+          6
+        ],
+        "time": "08:00"
+      },
+      "accent": "#7A1426",
+      "source": {
+        "type": "index",
+        "index": "/news/seokonomy/data/index.json",
+        "list": "issues",
+        "label": "제{issue}호",
+        "title": "{headline}",
+        "summary": "{summary}"
+      },
+      "cover": {
+        "style": "paper",
+        "mast": "SEOKONOMY",
+        "sub": "세코노미 · 주간 시장 경제지"
+      },
+      "read": "https://hangseokemail-spec.github.io/news/seokonomy/data/{date}.json 의 cover(headline·dek)와 reading(standfirst·glance·sections) — 이번 주 시장 움직임이 무엇을 말했는지의 결론",
       "summaryTone": "한다체"
     },
     {
