@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>목표·노후 화면 시안 | Seok’s Stock</title>
+<style>
+/* Seok's Stock — 디자인 토큰과 화면 규칙 (디자인 제안서 02_design.md 기준) */
+/* ===== 토큰 (03_design_opus §A) — app.css 2~41행을 이 블록으로 통째로 교체 ===== */
+:root {
+  color-scheme: light;
+  --bg-page: #F4F6F6; --bg-surface: #FFFFFF; --bg-sunken: #EEF1F2; --bg-hover: #E9EEEF; --bg-selected: #E3F2F0;
+  --border: #D9DFE3; --border-strong: #848F98;
+  --text-1: #16202A; --text-2: #4A5561; --text-3: #5F6974;
+  --accent: #00756B; --accent-hover: #00655C; --on-accent: #FFFFFF; --focus-ring: #00756B;
+  --up: #D1293D; --down: #1F63D6; --flat: var(--text-2);
+  --st-info: #4A5561; --st-caution: #9A5B00; --st-caution-bg: #FFF4E0; --st-warning: #C2410C; --st-warning-bg: #FDEDE6;
+  --st-good: #0F7B3E; --st-good-bg: #E7F5EC; --lowconf-bg: #FFF1C2; --lowconf-line: #B07D00;
+  --series-1: #008A7E; --series-2: #D97F00; --series-3: #7B5CD6; --series-bm: #8A939C;
+  --compare-1: #D86CCA; --compare-2: #10588B; --compare-3: #7F4201; --compare-4: #960E59; --compare-5: #00AB55; --compare-6: #847700;
+  --cat-1: #008A7E; --cat-2: #D97F00; --cat-3: #7B5CD6; --cat-4: #4F9A2A; --cat-5: #D44E8C; --cat-6: #A88A00; --cat-7: #2E86D1; --cat-8: #A6602A; --cat-x: #A3ABB3;
+  --div-n3: #1F4FA8; --div-n2: #5C8BDC; --div-n1: #B9D0F3; --div-0: #EEF0F2; --div-p1: #F6C1C6; --div-p2: #E86F7E; --div-p3: #B5172E;
+  /* 2차 신규 */
+  --hl-bg: #FDE988; --hl-ink: #7D5E07;                       /* 형광펜: 새로 들어온 종목 */
+  --sig-buy: var(--up); --sig-sell: var(--down); --sig-reb: var(--text-2); /* 매수 빨강·매도 파랑(국내 HTS 관례) */
+  --timing-off: rgba(110, 120, 130, .13);                    /* '쉬는 중' 구간 음영(차트) */
+  --zone-fill: rgba(0, 117, 107, .08); --zone-line: #00756B;  /* 전략 찾기 목표 영역 */
+  --dot-muted: rgba(99, 109, 120, .35);                      /* 산점도 후보 점 */
+  --erosion: rgba(99, 109, 120, .16);                        /* 물가가 가져가는 몫(빗금) */
+  --font: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-14: 56px;
+  --r-mark: 4px; --r-ctrl: 8px; --r-panel: 12px; --r-sheet: 16px; --r-pill: 999px;
+  --shadow-pop: 0 1px 2px rgba(22,32,42,.08), 0 8px 24px rgba(22,32,42,.12);
+  --shadow-sheet: 0 -4px 24px rgba(22,32,42,.16);
+  --ease: cubic-bezier(.2,.8,.2,1); --dur-fast: 150ms; --dur-base: 220ms; --hit: 44px;
+  --fs-hero: 36px; --fs-kpi: 22px; --fs-title: 20px; --fs-section: 17px; --fs-body: 16px; --fs-label: 14px; --fs-caption: 13px; --fs-axis: 12px;
+  --header-h: 48px; --tabbar-h: 60px;
+}
+:root[data-updown="global"] { --up: #0F7B3E; --down: #D1293D; --div-n3: #B5172E; --div-n2: #E86F7E; --div-n1: #F6C1C6; --div-p1: #BFE3CB; --div-p2: #5DB27C; --div-p3: #0F7B3E; }
+/* 어두운 테마 = 기본. '딤(dim)' 단계로 한 칸 밝힘: 페이지 L 0.186→0.252, 지면 0.222→0.292 (OKLCH) */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-page: #1B2427; --bg-surface: #252D30; --bg-sunken: #2E363A; --bg-hover: #343D40; --bg-selected: #19413E;
+  --border: #3F484B; --border-strong: #788286;
+  --text-1: #E4EBED; --text-2: #BCC4C7; --text-3: #A1A9AC;
+  --accent: #2CC6B2; --accent-hover: #50D7C3; --on-accent: #0A191A; --focus-ring: #2CC6B2;
+  --up: #FE8184; --down: #6FA8FE;
+  --st-info: #BCC4C7; --st-caution: #EBB353; --st-caution-bg: #403419; --st-warning: #FA8C58; --st-warning-bg: #4B2C21;
+  --st-good: #63D18F; --st-good-bg: #1C3D2C; --lowconf-bg: #493B13; --lowconf-line: #E0AF3B;
+  --series-1: #0EBCAC; --series-2: #F4A138; --series-3: #A18CF8; --series-bm: #8B969B;
+  --compare-1: #BC53A0; --compare-2: #A3DEFF; --compare-3: #CB6317; --compare-4: #FFBDCD; --compare-5: #7ADF87; --compare-6: #F9DA41;
+  --cat-1: #0EBCAC; --cat-2: #F4A138; --cat-3: #A18CF8; --cat-4: #4FA02C; --cat-5: #D95A94; --cat-6: #A88E12; --cat-7: #4B9BE0; --cat-8: #B8743F; --cat-x: #66717A;
+  --div-n3: #2460B7; --div-n2: #284D83; --div-n1: #263C54; --div-0: #313638; --div-p1: #552D30; --div-p2: #852D36; --div-p3: #B6303E;
+  --hl-bg: #5A4C14; --hl-ink: #ECD065;
+  --timing-off: rgba(161, 169, 172, .12);
+  --zone-fill: rgba(44, 198, 178, .10); --zone-line: #2CC6B2;
+  --dot-muted: rgba(161, 169, 172, .35);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: var(--fs-body)/1.55 var(--font); letter-spacing: -.011em; word-break: keep-all; background: var(--bg-sunken); color: var(--text-1); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+h1, h2, p { margin: 0; }
+h1, h2 { font-size: var(--fs-title); }
+small, .hint { color: var(--text-3); font-size: var(--fs-caption); }
+button, input { font: inherit; color: inherit; }
+button, .input, .unknown { min-height: var(--hit); border: 1px solid var(--border-strong); border-radius: var(--r-ctrl); background: var(--bg-surface); }
+button { padding: 7px 12px; cursor: pointer; font-size: var(--fs-label); font-weight: 650; }
+button:hover, button:active { background: var(--bg-hover); border-color: var(--text-2); }
+button:active { box-shadow: inset 0 0 0 1px var(--border-strong); }
+button:disabled { cursor: default; background: var(--bg-sunken); color: var(--text-3); }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.primary:hover, .primary:active { background: var(--accent-hover); }
+.toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; gap: 12px; }
+.previews { display: flex; align-items: flex-start; gap: 20px; overflow-x: auto; padding: 0 20px 24px; }
+.preview { flex: 0 0 1280px; min-width: 0; }
+.phone { flex-basis: 390px; }
+.frame-meta { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.frame-label { color: var(--text-2); font-size: var(--fs-label); }
+.screen { border: 1px solid var(--border); border-radius: var(--r-sheet); background: var(--bg-page); overflow: hidden; }
+.app-head { display: flex; justify-content: space-between; align-items: center; min-height: 52px; padding: 0 24px; background: var(--bg-surface); border-bottom: 1px solid var(--border); }
+.app-head span { color: var(--text-2); font-size: var(--fs-label); }
+.cards { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; padding: 24px; align-items: stretch; }
+.card { min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 24px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--r-panel); }
+.card-head p { font-size: var(--fs-label); color: var(--text-2); margin-top: 4px; }
+.scale-layout { width: 100%; max-width: 380px; margin: auto; }
+.scale-amounts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.scale-amounts .field { text-align: center; }
+.scale-art { display: block; width: 100%; margin-top: -40px; pointer-events: none; }
+.scale-art [id^="stand"] rect { visibility: hidden; }
+.axle-controls { display: grid; grid-template-columns: 1fr 1.25fr; gap: 8px; max-width: 245px; margin: -46px auto 0; position: relative; }
+.same { background: var(--bg-selected); border-radius: var(--r-ctrl); text-align: center; padding: 8px; font-size: var(--fs-label); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.scale-actions > .primary { flex: 1; }
+.field { display: grid; gap: 4px; align-content: start; min-width: 0; font-size: var(--fs-label); color: var(--text-2); }
+.input { display: flex; align-items: center; gap: 4px; padding: 0 8px; white-space: nowrap; }
+.input:focus-within { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.input input { color: var(--text-1); background: none; border: 0; outline: 0; min-width: 0; width: 100%; min-height: 42px; text-align: right; font-variant-numeric: tabular-nums; padding: 0; }
+.input:has([aria-invalid="true"]) { border: 2px solid var(--st-warning); }
+.choices, .params { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+legend { font-weight: 650; margin: 0 0 8px; padding: 0; font-size: var(--fs-label); }
+.choices button[aria-pressed="true"], .unknown { background: var(--bg-selected); border-color: var(--accent); }
+.unknown { font-weight: 750; display: grid; place-items: center; color: var(--text-1); }
+.target-line { display: grid; grid-template-columns: minmax(0, 1fr) 1fr; align-items: center; gap: 12px; }
+.answer { display: grid; gap: 8px; padding: 12px; border-radius: var(--r-ctrl); background: var(--bg-sunken); }
+.answer strong { font-size: var(--fs-kpi); }
+.warning { padding: 8px; border-radius: var(--r-ctrl); background: var(--st-warning-bg); color: var(--st-warning); font-size: var(--fs-label); }
+.ratio { display: flex; background: var(--bg-surface); border: 1px solid var(--text-2); height: 12px; border-radius: var(--r-pill); overflow: hidden; }
+.ratio span:first-child { background: var(--text-2); }
+.ratio span + span { background: var(--up); border-inline-start: 2px solid var(--bg-sunken); }
+.ratio.loss span + span { background: var(--down); }
+.bar-labels { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; font-size: var(--fs-caption); color: var(--text-2); }
+.alts { display: flex; flex-wrap: wrap; gap: 8px; }
+.alts button { border-radius: var(--r-pill); }
+.feedback { color: var(--st-warning); font-size: var(--fs-caption); }
+.feedback:empty { display: none; }
+.details { margin: 0 24px 24px; padding: 12px 16px; border-top: 1px solid var(--border-strong); font-size: var(--fs-label); }
+.details strong { display: block; }
+.phone .cards { grid-template-columns: 1fr; padding: 12px; gap: 12px; }
+.phone .card, .phone .app-head { padding-inline: 14px; }
+.phone .card { padding-block: 16px; }
+.phone .choices, .phone .params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.phone .actions > button { width: 100%; }
+.phone .scale-actions { flex-wrap: nowrap; }
+.phone .scale-actions > button { width: auto; }
+.phone .scale-amounts { gap: 12px; }
+.phone .details { margin-inline: 12px; }
+.scale-art.tilt [id^="beam"] { animation: beam 250ms var(--ease); }
+.scale-art.tilt [id^="panL"] { animation: pan-left 250ms var(--ease); }
+.scale-art.tilt [id^="panR"] { animation: pan-right 250ms var(--ease); }
+@keyframes beam { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(var(--angle)); } }
+@keyframes pan-left { 0%, 100% { transform: translate(0, 0); } 30% { transform: translate(.224px, var(--left-y)); } }
+@keyframes pan-right { 0%, 100% { transform: translate(0, 0); } 30% { transform: translate(-.224px, var(--right-y)); } }
+@media (prefers-reduced-motion: reduce) { .scale-art.tilt :is([id^="beam"], [id^="pan"]) { animation: none; } }
+@media (max-width: 720px) {
+  .previews { flex-direction: column; overflow: auto; }
+  .preview, .phone { flex-basis: auto; }
+  .preview { width: 1280px; }
+  .phone { order: -1; width: min(390px, calc(100vw - 24px)); }
+  .previews { padding-inline: 12px; }
+}
+</style>
+<body>
+<header class="toolbar"><h1>목표·노후 화면 시안</h1><button id="theme">라이트로 보기</button></header>
+<main class="previews" aria-label="화면 크기별 시안" tabindex="0">
+  <section class="preview" data-preview="wide" aria-label="넓은 화면"></section>
+  <section class="preview phone" data-preview="phone" aria-label="휴대폰 화면"></section>
+</main>
+<template id="screen">
+  <div class="frame-meta"><p class="frame-label"></p><button class="example" hidden>10년 수익률 예시</button></div>
+  <div class="screen">
+    <header class="app-head"><strong>Seok’s Stock</strong><span>목표·노후</span></header>
+    <div class="cards">
+      <section class="card scale">
+        <header class="card-head"><h2>돈의 가치 저울</h2><p>오늘과 같은 만큼 사려면 그때 얼마가 필요할까요?</p></header>
+        <div class="scale-layout">
+          <div class="scale-amounts"></div>
+<svg class="scale-art" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" role="img" aria-label="양쪽 접시가 수평을 이루는 저울">
+  <g id="stand">
+    <path d="M180 79 203 151H157Z" fill="var(--bg-selected)" stroke="var(--border-strong)" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M144 151h72" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+    <rect x="72" y="160" width="216" height="36" rx="8" fill="none" stroke="var(--border-strong)" stroke-dasharray="3 4"/>
+  </g>
+  <g id="beam" transform-origin="180 79">
+    <path d="M60 79h240" stroke="var(--text-2)" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="180" cy="79" r="6" fill="var(--bg-surface)" stroke="var(--accent)" stroke-width="3"/>
+  </g>
+  <g id="panL">
+    <path d="M60 79 22 124h76Z" fill="none" stroke="var(--border-strong)" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M18 124h84q-9 19-29 19H47q-20 0-29-19Z" fill="var(--bg-selected)" stroke="var(--text-2)" stroke-width="1.5"/>
+    <circle cx="60" cy="79" r="3" fill="var(--text-2)"/>
+  </g>
+  <g id="panR">
+    <path d="M300 79 262 124h76Z" fill="none" stroke="var(--border-strong)" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M258 124h84q-9 19-29 19h-26q-20 0-29-19Z" fill="var(--bg-selected)" stroke="var(--text-2)" stroke-width="1.5"/>
+    <circle cx="300" cy="79" r="3" fill="var(--text-2)"/>
+  </g>
+</svg>
+          <div class="axle-controls"></div>
+        </div>
+        <p class="same" aria-live="polite"></p>
+        <p class="feedback scale-error" aria-live="polite"></p>
+        <div class="actions scale-actions"><button class="primary transfer">이 금액을 목표로</button><button class="demo">저울 움직여 보기</button></div>
+      </section>
+      <section class="card calculator">
+        <header class="card-head"><h2>실행 목표 만들기</h2></header>
+        <fieldset><legend>무엇이 궁금해요?</legend><div class="choices"></div></fieldset>
+        <div class="target-line"></div>
+        <div class="params"></div>
+        <div class="answer" role="status" aria-atomic="true"></div>
+        <div class="alts"></div>
+        <div class="actions calc-actions"><button class="primary apply">아래 계획에 반영</button><button class="strategy">투자 규칙 찾기 →</button></div>
+        <p class="feedback calc-feedback" aria-live="polite"></p>
+      </section>
+    </div>
+    <div class="details"><strong>자세한 계획</strong><span class="hint plan-summary">구간별 수익률 · 연금 · 실제 기록</span></div>
+  </div>
+</template>
+<script>
+const baseYear = 2026;
+const integer = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 });
+const decimal = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 });
+const fmt = (value, formatter = integer) => formatter.format(value).replace('-', '−');
+
+function won(value) {
+  const rounded = Math.round(Math.abs(value));
+  if (!rounded) return '0원';
+  const eok = Math.floor(rounded / 1e8);
+  const man = Math.floor(rounded % 1e8 / 1e4);
+  const rest = rounded % 1e4;
+  const parts = [];
+  if (eok) parts.push(fmt(eok) + '억');
+  if (man) parts.push((man % 1000 === 0 ? man / 1000 + '천' : fmt(man)) + '만');
+  if (rest) parts.push(fmt(rest));
+  return (value < 0 ? '−' : '') + parts.join(' ') + '원';
+}
+
+const duration = months => Math.floor(months / 12) + '년 ' + months % 12 + '개월';
+const monthRate = rate => Math.expm1(Math.log1p(rate / 100) / 12);
+
+function growth(months, rate) {
+  const exponent = Math.log1p(rate / 100) * months / 12;
+  return [Math.exp(exponent), rate === 0 ? months : Math.expm1(exponent) / monthRate(rate)];
+}
+
+function future(months, initial, monthly, rate) {
+  const [principal, payments] = growth(months, rate);
+  return initial * principal + monthly * payments;
+}
+
+function monthsToGoal(target, initial, monthly, rate) {
+  for (let month = 0; month <= 1200; month++) {
+    if (future(month, initial, monthly, rate) >= target) return month;
+  }
+  return null;
+}
+
+function neededRate(target, initial, monthly, months) {
+  let low = -50;
+  let high = 100;
+  if (future(months, initial, monthly, high) < target) return null;
+  if (future(months, initial, monthly, low) >= target) return low;
+  while (high - low > .000001) {
+    const mid = (low + high) / 2;
+    if (future(months, initial, monthly, mid) >= target) high = mid;
+    else low = mid;
+  }
+  return Math.round(high * 100) / 100;
+}
+
+const labels = { years: '기간', monthly: '매달 넣을 돈', initial: '처음 목돈', rate: '필요 수익률' };
+const fields = {
+  initial: ['지금 목돈', '원', 0, 1e12],
+  monthly: ['매달 넣을 돈', '원', 0, 1e12],
+  rate: ['연 수익률', '%', -50, 100],
+  years: ['기간', '년', 0.08, 100],
+  target: ['목표 금액', '원', 1, 1e12],
+  yearsScale: ['기간', '년', 0, 100],
+  inflation: ['물가 상승률 · 연', '%', -20, 20],
+  today: ['오늘 돈', '원', 1, 1e12],
+  then: ['미래 돈', '원', 1, 1e12]
+};
+
+function field(key, value, prefix) {
+  const [label, unit] = fields[key];
+  const reading = unit === '원';
+  const hintId = prefix + '-' + key + '-hint';
+  return `<label class="field"><span class="field-title">${label}</span>
+    <span class="input"><input data-key="${key}" inputmode="${reading ? 'numeric' : 'decimal'}"
+      value="${fmt(value, reading ? integer : decimal)}"${reading ? ` aria-describedby="${hintId}"` : ''}><span>${unit}</span></span>
+    ${reading ? `<small id="${hintId}">${won(value)}</small>` : ''}</label>`;
+}
+
+function parse(input) {
+  const [, unit, min, max] = fields[input.dataset.key];
+  const raw = input.value.trim().replaceAll(',', '').replace('−', '-');
+  const value = Number(raw);
+  const valid = /^-?(?:\d+\.?\d*|\.\d+)$/.test(raw) && value >= min && value <= max &&
+    (unit !== '원' || Number.isInteger(value));
+  input.setAttribute('aria-invalid', String(!valid));
+  if (unit === '원') input.closest('.field').querySelector('small').textContent = valid ? won(value) : '';
+  return valid ? value : null;
+}
+
+function formatInput(input) {
+  const value = parse(input);
+  if (value !== null) input.value = fmt(value, fields[input.dataset.key][1] === '원' ? integer : decimal);
+}
+
+function mount(preview) {
+  const prefix = preview.dataset.preview;
+  const phone = prefix === 'phone';
+  preview.append(document.querySelector('#screen').content.cloneNode(true));
+  const get = selector => preview.querySelector(selector);
+  const scale = get('.scale');
+  const calc = get('.calculator');
+  const art = get('.scale-art');
+  if (phone) for (const group of art.querySelectorAll('g')) group.id += '-phone';
+  get('.frame-label').textContent = phone ? '휴대폰 · 390px' : '넓은 화면 · 1280px';
+
+  let last = 'today';
+  let demoSide = 'today';
+  let scaleValues;
+  const state = { ask: phone ? 'rate' : 'years', target: 163860000, initial: 30000000,
+    monthly: 500000, rate: 6, years: phone ? 3 : 20 };
+
+  get('.scale-amounts').innerHTML = field('today', 1e8, prefix) + field('then', 163860000, prefix);
+  get('.axle-controls').innerHTML = field('yearsScale', 20, prefix) + field('inflation', 2.5, prefix);
+  const scaleInput = key => scale.querySelector(`[data-key="${key}"]`);
+
+  function tilt(side) {
+    const left = side === 'today';
+    art.style.setProperty('--angle', left ? '-3.5deg' : '3.5deg');
+    art.style.setProperty('--left-y', left ? '7.326px' : '-7.326px');
+    art.style.setProperty('--right-y', left ? '-7.326px' : '7.326px');
+    art.classList.remove('tilt');
+    void art.getBoundingClientRect();
+    art.classList.add('tilt');
+  }
+
+  function updateScale(edited) {
+    const opposite = last === 'today' ? 'then' : 'today';
+    const amount = parse(scaleInput(last));
+    const years = parse(scaleInput('yearsScale'));
+    const inflation = parse(scaleInput('inflation'));
+    const factor = (1 + inflation / 100) ** years;
+    const converted = Math.round((last === 'today' ? amount * factor : amount / factor) / 10000) * 10000;
+    const error = get('.scale-error');
+    const invalid = [amount, years, inflation].includes(null);
+    const outOfRange = converted < 1 || converted > fields[opposite][3];
+    get('.transfer').disabled = invalid || outOfRange;
+    if (invalid || outOfRange) {
+      error.textContent = invalid ? '금액, 기간(0~100년), 물가(−20~20%)를 확인해 주세요.' : '환산 금액은 1만원~1조원 사이여야 해요.';
+      get('.same').textContent = '입력값을 확인하면 같은 가치의 금액이 표시돼요.';
+      return;
+    }
+    scaleInput(opposite).value = fmt(converted);
+    parse(scaleInput(opposite));
+    const year = fmt(baseYear + Math.floor(years)).replace(',', '');
+    scaleInput('then').closest('.field').querySelector('.field-title').textContent = year + '년 통장 숫자';
+    scaleValues = { target: last === 'today' ? converted : amount, years };
+    error.textContent = '';
+    get('.same').textContent = `오늘 ${won(last === 'today' ? amount : converted)} ≈ ${year}년 ${won(scaleValues.target)} · 같은 가치`;
+    if (edited === 'today' || edited === 'then') tilt(edited);
+  }
+
+  scale.addEventListener('change', event => {
+    const input = event.target;
+    if (!input.matches('input')) return;
+    if (input.dataset.key === 'today' || input.dataset.key === 'then') last = input.dataset.key;
+    formatInput(input);
+    updateScale(input.dataset.key);
+  });
+
+  get('.demo').onclick = () => {
+    tilt(demoSide);
+    demoSide = demoSide === 'today' ? 'then' : 'today';
+  };
+  get('.transfer').onclick = () => {
+    state.target = scaleValues.target;
+    state.years = Math.max(0.08, scaleValues.years);
+    if (state.ask === 'years') state.ask = 'rate';
+    renderFields();
+    get('.target-line input').focus();
+  };
+
+  get('.choices').innerHTML = Object.entries(labels).map(([key, label]) =>
+    `<button data-ask="${key}" aria-pressed="false">${label}</button>`).join('');
+
+  function renderFields() {
+    for (const button of calc.querySelectorAll('[data-ask]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.ask === state.ask));
+    }
+    get('.target-line').innerHTML = field('target', state.target, prefix) + '<small>그해 통장에 찍힐 금액</small>';
+    get('.params').innerHTML = ['initial', 'monthly', 'rate', 'years'].map(key => key === state.ask
+      ? `<div class="field"><span>${labels[key]} <span class="sr-only">(계산할 값)</span></span><span class="unknown" aria-hidden="true">?</span></div>`
+      : field(key, state[key], prefix)).join('');
+    renderAnswer();
+  }
+
+  function renderAnswer() {
+    const answer = get('.answer');
+    get('.alts').replaceChildren();
+    get('.calc-feedback').textContent = '';
+    if (calc.querySelector('[aria-invalid="true"]')) {
+      answer.textContent = '입력값을 확인해 주세요. 금액은 0원 이상, 연 수익률은 −50~100%, 기간은 1개월~100년이에요.';
+      get('.apply').disabled = get('.strategy').disabled = true;
+      return;
+    }
+
+    const { target, ask } = state;
+    let { initial, monthly, rate } = state;
+    let months = Math.round(state.years * 12);
+    let headline;
+    let warning = '';
+    let difficult = false;
+    let reference = false;
+    const [principal, payments] = growth(months, rate);
+
+    if (ask === 'years') {
+      months = monthsToGoal(target, initial, monthly, rate);
+      headline = months === null ? '100년 안에 목표에 닿지 못해요' : duration(months);
+      difficult = months === null;
+      if (difficult) {
+        months = 1200;
+        reference = true;
+      }
+    } else if (ask === 'rate') {
+      const required = neededRate(target, initial, monthly, months);
+      difficult = required === null || required > 30;
+      headline = required === null ? '연 100%로도 목표에 닿지 못해요' : `연 ${fmt(required, decimal)}%`;
+      if (difficult) warning = '수익률만으로는 목표에 닿기 어려워요.';
+      else if (required > 15) warning = '꾸준히 내기 어려운 수익률이에요.';
+      if (!difficult) rate = required;
+      else {
+        rate = 6;
+        reference = true;
+      }
+    } else if (ask === 'initial') {
+      initial = Math.max(0, Math.ceil((target - monthly * payments) / principal));
+      headline = initial ? won(initial) : '매달 적립만으로 충분해요';
+    } else {
+      monthly = Math.max(0, Math.ceil((target - initial * principal) / payments));
+      headline = monthly ? won(monthly) : '지금 목돈만으로 충분해요';
+    }
+
+    const total = future(months, initial, monthly, rate);
+    const paid = initial + monthly * months;
+    const gain = total - paid;
+    const share = gain >= 0 ? (total ? paid / total : 1) : (paid ? total / paid : 0);
+    const wonMan = value => won(Math.sign(value) * Math.round(Math.abs(value) / 10000) * 10000);
+    const finishYear = baseYear + Math.floor((10 + months) / 12);
+    const finishMonth = (10 + months) % 12 + 1;
+    const caption = reference ? `${duration(months)} · 연 ${fmt(rate, decimal)}%로 모으면 ${wonMan(total)}`
+      : ask === 'years' ? `${finishYear}년 ${finishMonth}월에 목표 도달` : `${duration(months)} 뒤 예상 금액 ${wonMan(total)}`;
+    answer.innerHTML = `<div><small>${labels[ask]} 결과</small><br><strong>${headline}</strong></div>
+      ${warning ? `<p class="warning">${warning}</p>` : ''}
+      <small>${caption}</small>
+      <div class="ratio${gain < 0 ? ' loss' : ''}" aria-hidden="true"><span style="width:${share * 100}%"></span><span style="width:${(1 - share) * 100}%"></span></div>
+      <div class="bar-labels"><span>넣은 돈 <b>${wonMan(paid)}</b></span><span>${gain < 0 ? '줄어든 돈' : '불어난 돈'} <b>${wonMan(gain)}</b></span></div>`;
+
+    if (difficult) {
+      const altMonths = monthsToGoal(target, initial, monthly, rate);
+      const [altGrowth, altPayments] = growth(months, rate);
+      const altMonthly = Math.ceil((target - initial * altGrowth) / altPayments / 10000) * 10000;
+      if (altMonths !== null) addAlternative(`연 ${fmt(rate, decimal)}%로 ${duration(altMonths)}`, { years: altMonths / 12, rate });
+      if (altMonthly > 0 && altMonthly <= fields.monthly[3]) {
+        addAlternative(`연 ${fmt(rate, decimal)}%로 매달 ${won(altMonthly)}`, { monthly: altMonthly, rate, years: months / 12 });
+      }
+    }
+
+    get('.apply').disabled = get('.strategy').disabled = difficult;
+    get('.strategy').textContent = difficult ? '투자 규칙 찾기 →' : `연 ${fmt(rate, decimal)}% 투자 규칙 찾기 →`;
+    get('.apply').onclick = () => {
+      get('.plan-summary').textContent = `목표 ${won(target)} · ${duration(months)} · 목돈 ${won(initial)} · 매달 ${won(monthly)} · 연 ${fmt(rate, decimal)}%`;
+      get('.calc-feedback').textContent = '시안의 자세한 계획에 반영했어요.';
+    };
+    get('.strategy').onclick = () => {
+      get('.calc-feedback').textContent = `앱에서는 연 ${fmt(rate, decimal)}%를 목표로 투자 규칙 찾기를 열어요.`;
+    };
+  }
+
+  function addAlternative(label, values) {
+    const button = document.createElement('button');
+    button.textContent = label;
+    button.onclick = () => {
+      Object.assign(state, values, { ask: 'years' });
+      renderFields();
+      get('[data-ask="years"]').focus();
+    };
+    get('.alts').append(button);
+  }
+
+  calc.addEventListener('click', event => {
+    if (!event.target.matches('[data-ask]')) return;
+    state.ask = event.target.dataset.ask;
+    renderFields();
+  });
+  calc.addEventListener('change', event => {
+    const input = event.target;
+    if (!input.matches('input')) return;
+    const value = parse(input);
+    if (value !== null) {
+      state[input.dataset.key] = value;
+      formatInput(input);
+    }
+    renderAnswer();
+  });
+
+  if (phone) {
+    const example = get('.example');
+    let longExample = false;
+    example.hidden = false;
+    example.onclick = () => {
+      longExample = !longExample;
+      Object.assign(state, { ask: 'rate', target: 163860000, initial: 30000000,
+        monthly: 500000, rate: 6, years: longExample ? 10 : 3 });
+      example.textContent = longExample ? '3년 대안 예시' : '10년 수익률 예시';
+      renderFields();
+    };
+  }
+
+  updateScale();
+  renderFields();
+}
+
+document.querySelectorAll('[data-preview]').forEach(mount);
+document.querySelector('#theme').onclick = event => {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+  event.target.textContent = dark ? '딤 다크로 보기' : '라이트로 보기';
+};
+</script>
+</body>
+</html>

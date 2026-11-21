@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" role="img" aria-label="양쪽 접시가 수평을 이루는 저울">
+  <g id="stand">
+    <path d="M180 79 203 151H157Z" fill="var(--bg-selected)" stroke="var(--border-strong)" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M144 151h72" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+    <rect x="72" y="160" width="216" height="36" rx="8" fill="none" stroke="var(--border-strong)" stroke-dasharray="3 4"/>
+  </g>
+  <g id="beam" transform-origin="180 79">
+    <path d="M60 79h240" stroke="var(--text-2)" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="180" cy="79" r="6" fill="var(--bg-surface)" stroke="var(--accent)" stroke-width="3"/>
+  </g>
+  <g id="panL">
+    <path d="M60 79 22 124h76Z" fill="none" stroke="var(--border-strong)" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M18 124h84q-9 19-29 19H47q-20 0-29-19Z" fill="var(--bg-selected)" stroke="var(--text-2)" stroke-width="1.5"/>
+    <circle cx="60" cy="79" r="3" fill="var(--text-2)"/>
+  </g>
+  <g id="panR">
+    <path d="M300 79 262 124h76Z" fill="none" stroke="var(--border-strong)" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M258 124h84q-9 19-29 19h-26q-20 0-29-19Z" fill="var(--bg-selected)" stroke="var(--text-2)" stroke-width="1.5"/>
+    <circle cx="300" cy="79" r="3" fill="var(--text-2)"/>
+  </g>
+</svg>

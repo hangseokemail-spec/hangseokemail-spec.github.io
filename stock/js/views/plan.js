@@ -4,6 +4,8 @@ import { fmtKRW, fmtKRWShort, fmtPct, esc, krRead } from '../ui/format.js';
 import { moneyHints } from '../ui/dom.js';
 import { lineChart, css, isMobile } from '../ui/charts.js';
 import { computePlan } from '../core/plan.js';
+import { ensureCards, renderGoalCards, migratePlan, planRatePct } from './goalcards.js';
+import { toToday } from '../core/goalcalc.js';
 
 const PENSION_KINDS = [['national', '국민연금'], ['civil', '공무원연금'], ['teacher', '사학연금'], ['military', '군인연금'], ['retire', '퇴직연금·IRP'], ['personal', '개인연금'], ['other', '기타']];
 const PRESETS = [
@@ -22,22 +24,24 @@ function newPlan(name = '내 노후 계획', mode = 'retire') {
     expenseToday: 3500000,
     pensions: [{ kind: 'civil', monthly: 2500000, startAge: 65, indexed: true, years: null }],
     events: [],
-    goalAmount: 1000000000, goalYears: 20, goalBasis: 'nominal', legacy: 0,
-    track: { owner: 'all' }, actuals: [], showToday: false, example: true,
+    goalAmount: 1000000000, goalYears: 20, legacy: 0,
+    track: { owner: 'all' }, actuals: [], example: true,
   };
 }
 
 let P = null; // {active, list}
-let root = null, plan = null, res = null, selSeg = { phase: 'acc', i: 0 }, altPreview = null;
+let root = null, plan = null, res = null, selSeg = { phase: 'acc', i: 0 }, altPreview = null, cardsApi = null;
 
 export function initPlan(container) {
   root = container;
   P = store('ss.plans') || { active: 0, list: [newPlan()] };
   if (!P.list.length) P.list = [newPlan()];
+  P.list.forEach(migratePlan);
   render();
   window.addEventListener('plan:set-rate', (e) => {
     plan = P.list[P.active];
     plan.accSegs = [{ from: 1, to: null, rate: +e.detail.rate.toFixed(2) }];
+    if (plan.calc && plan.calc.ask !== 'rate') plan.calc.rate = +e.detail.rate.toFixed(1);
     plan.example = false;
     save(); render();
     toast(`적립기 수익률을 연 ${e.detail.rate.toFixed(1)}%로 바꿨어요(${e.detail.source}).`);
@@ -49,7 +53,7 @@ function save() { store('ss.plans', P); scheduleHistory(); if (plan && !plan.exa
 // ------------------------------------------------------------------ 계획 기록(계획마다 최근 5회): 값을 바꾸고 3초 쉬면 한 번 남김
 const MAX_PH = 5;
 let phTimer = null;
-const INPUT_KEYS = ['mode', 'age', 'retireAge', 'endAge', 'inflation', 'initial', 'monthly', 'monthlyGrowth', 'saveUntilAge', 'accSegs', 'decSegs', 'expenseToday', 'pensions', 'events', 'goalAmount', 'goalYears', 'goalBasis', 'legacy'];
+const INPUT_KEYS = ['mode', 'age', 'retireAge', 'endAge', 'inflation', 'initial', 'monthly', 'monthlyGrowth', 'saveUntilAge', 'accSegs', 'decSegs', 'expenseToday', 'pensions', 'events', 'goalAmount', 'goalYears', 'legacy'];
 function snapOf(p) { const o = {}; INPUT_KEYS.forEach((k) => { o[k] = structuredClone(p[k]); }); return o; }
 function phAll() { return store('ss.planHistory') || {}; }
 function scheduleHistory() {
@@ -74,7 +78,7 @@ function renderHistoryChips() {
   box.innerHTML = `<span class="ph-title">최근 기록</span>${list.map((h, i) => `<button class="ph-chip ${h.ok ? 'ok' : 'short'}" type="button" data-ph="${i}" title="이 값으로 되돌리기"><small>${esc(new Date(h.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</small>${esc(h.sum)}</button>`).join('')}`;
   $$('[data-ph]', box).forEach((b) => { b.onclick = () => {
     const h = list[+b.dataset.ph]; const before = snapOf(plan);
-    Object.assign(plan, structuredClone(h.snap)); plan.example = false; store('ss.plans', P); render();
+    Object.assign(plan, structuredClone(h.snap)); migratePlan(plan); plan.example = false; store('ss.plans', P); render();
     toast('그때 값으로 되돌렸어요.', { label: '취소', fn: () => { Object.assign(plan, before); store('ss.plans', P); render(); } });
   }; });
 }
@@ -88,6 +92,8 @@ function render() {
     </div>
     <div class="ph-strip" id="planHist"></div>
     ${plan.example ? `<div class="stale-bar" style="border-radius:12px;margin-bottom:12px">예시 값이에요. 내 나이와 생활비로 바꿔 보세요. <button class="btn small" type="button" id="clearEx">알겠어요</button></div>` : ''}
+    <div id="goalCards"></div>
+    <div class="plan-detail-title"><h2>자세한 계획</h2><span class="cap">구간별 수익률 · 목돈 · 연금 · 실제 기록까지 넣어 보는 곳이에요</span></div>
     <div class="plan-layout">
       <aside class="surface plan-input" id="planInput"></aside>
       <div class="surface result" id="planResult"></div>
@@ -108,9 +114,52 @@ function render() {
   $('#renPlan', root).onclick = () => { const v = prompt('계획 이름', plan.name); if (v) { plan.name = v; save(); render(); } };
   $('#delPlan', root)?.addEventListener('click', () => { if (confirm(`'${plan.name}' 계획을 지울까요?`)) { const removed = P.list.splice(P.active, 1)[0]; P.active = 0; save(); render(); toast('계획을 지웠어요.', { label: '되돌리기', fn: () => { P.list.push(removed); save(); render(); } }); } });
   $('#clearEx', root)?.addEventListener('click', () => { plan.example = false; save(); render(); });
+  cardsApi = null;
   renderInput();
   compute();
+  drawCards();
   renderHistoryChips();
+}
+
+// ------------------------------------------------------------------ 맨 위 카드: ① 돈의 가치 저울 ② 실행 목표 만들기
+function planNums() {
+  const g = plan.mode === 'goal';
+  return { target: g ? +plan.goalAmount : res?.lp?.needAtRetire || 0, years: g ? +plan.goalYears : plan.retireAge - plan.age, initial: +plan.initial || 0, monthly: +plan.monthly || 0, rate: planRatePct(plan),
+    events: (plan.events || []).length, growth: +plan.monthlyGrowth || 0, saveStop: !g && plan.saveUntilAge && plan.saveUntilAge < plan.retireAge ? plan.saveUntilAge : null };
+}
+function goFinder(ratePct, years) {
+  const pre = { targetCagr: +(+ratePct).toFixed(1), years: [5, 10, 15, 20].reduce((a, y) => (Math.abs(y - years) < Math.abs(a - years) ? y : a), 15) };
+  sessionStorage.setItem('ss.finderPrefill', JSON.stringify(pre));
+  location.hash = '#finder';
+  window.dispatchEvent(new CustomEvent('finder:prefill', { detail: pre }));
+}
+function drawCards() {
+  const box = $('#goalCards', root);
+  if (!box || !res) return;
+  ensureCards(plan, res);
+  cardsApi = renderGoalCards(box, plan, {
+    save: () => store('ss.plans', P), // 카드 안에서 눌러 보는 건 최근 기록에 남기지 않음
+    toast,
+    setInflation: (v) => { plan.inflation = v; plan.example = false; const x = $('#planInput [data-k="inflation"]', root); if (x && document.activeElement !== x) x.value = v; changed(); },
+    planNums,
+    toFinder: goFinder,
+    fromAssets: (cb) => window.dispatchEvent(new CustomEvent('assets:request-total', { detail: { cb: (total, label) => { if (!total) { toast('내 자산 탭에 등록된 자산이 없어요.'); return; } cb(total); toast(`${label} ${fmtKRW(total)}을 넣었어요.`); } } })),
+    apply: (v) => {
+      const before = structuredClone(plan);
+      const g = plan.mode === 'goal';
+      const yrs = Math.max(1, Math.ceil(v.months / 12));
+      let note = '아래 계획을 바꿨어요.';
+      if (g) {
+        Object.assign(plan, { goalAmount: Math.round(v.target), goalYears: yrs, initial: Math.round(v.initial), monthly: Math.round(v.monthly), monthlyGrowth: 0, accSegs: [{ from: 1, to: null, rate: v.ratePct }] });
+        if (v.ask === 'years' && v.months % 12) note = `아래 계획을 바꿨어요. 기간은 넉넉하게 ${yrs}년으로 넣었어요.`;
+      } else {
+        Object.assign(plan, { initial: Math.round(v.initial), monthly: Math.round(v.monthly), accSegs: [{ from: 1, to: null, rate: v.ratePct }] });
+        if (v.ask === 'years') { plan.retireAge = plan.age + yrs; note = `은퇴 나이를 ${plan.retireAge}세로 바꿨어요. 은퇴 나이를 바꾸면 필요 자금도 다시 계산돼요.`; }
+      }
+      plan.example = false; save(); renderInput(); compute();
+      toast(note, { label: '되돌리기', fn: () => { Object.assign(plan, before); save(); render(); } });
+    },
+  });
 }
 
 // ------------------------------------------------------------------ 입력
@@ -125,10 +174,9 @@ function renderInput() {
   if (box.querySelector('details.step')) openSteps = new Set($$('details.step', box).filter((d) => d.open).map((d) => d.dataset.step));
   box.innerHTML = `
     <div class="seg mode-switch" id="pMode"><button type="button" data-v="goal" aria-pressed="${g}">목표 금액 모으기</button><button type="button" data-v="retire" aria-pressed="${!g}">노후 자금</button></div>
-    <div class="field basis-switch"><span class="lb">숫자를 어떤 돈으로 볼까요? <button class="help" type="button" id="basisHelp">?</button></span><div class="seg" id="pBasis"><button type="button" data-v="0" aria-pressed="${!p.showToday}">${thenYear()}년 통장 숫자</button><button type="button" data-v="1" aria-pressed="${!!p.showToday}">오늘 돈으로</button></div></div>
     <details class="step" data-step="me" open><summary><span class="n">1</span>${g ? '얼마를, 몇 년 뒤에?' : '나는 몇 살?'}<span class="sum">${g ? `${p.goalYears}년 뒤 ${fmtKRWShort(p.goalAmount)}` : `${p.age}세 · ${p.retireAge}세 은퇴 · ${p.endAge}세까지`}</span></summary><div class="stack">
       ${g ? `<div class="grid2"><label class="field">목표 금액${num('goalAmount', won(p.goalAmount), '원')}</label><label class="field">기간${num('goalYears', p.goalYears, '년')}</label></div>
-        <div class="field">목표 금액 기준<div class="seg" id="gBasis"><button type="button" data-v="nominal" aria-pressed="${p.goalBasis !== 'today'}">${thenYear()}년 통장 숫자로</button><button type="button" data-v="today" aria-pressed="${p.goalBasis === 'today'}">오늘 돈 가치로</button></div><p class="cap">‘오늘 돈 가치로’를 고르면 물가만큼 목표를 키워서 계산해요(지금 10억의 구매력).</p></div>`
+        <p class="cap">${thenYear()}년 통장 숫자 · 오늘 돈으로는 ${fmtKRW(toToday(+p.goalAmount || 0, +p.goalYears || 0, (+p.inflation || 0) / 100))}어치 · 위 저울에서 맞춰 볼 수 있어요</p>`
       : `<div class="grid3"><label class="field">지금 나이${num('age', p.age, '세')}</label><label class="field">은퇴 나이${num('retireAge', p.retireAge, '세')}</label><label class="field">기대 수명${num('endAge', p.endAge, '세')}</label></div>`}
       <label class="field">물가상승률(연)${num('inflation', p.inflation, '%')}</label>
     </div></details>
@@ -156,10 +204,7 @@ function renderInput() {
     <p class="cap step-note">목돈(등록금·집·퇴직금 등)은 오른쪽 결과의 <b>나이 띠</b>에서 넣어요.</p>`;
   if (openSteps) $$('details.step', box).forEach((d) => { d.open = openSteps.has(d.dataset.step) || (d.dataset.step === 'me' && !openSteps.size); });
   moneyHints(box);
-  $('#basisHelp', box).onclick = (e) => popover(e.currentTarget, `<b>${thenYear()}년 통장 숫자 vs 오늘 돈</b><p style="margin:6px 0">물가가 오르면 같은 1억으로 살 수 있는 게 줄어요. 물가 ${plan.inflation}%면 20년 뒤 1억은 오늘 돈으로 ${krRead(1e8 / Math.pow(1 + plan.inflation / 100, 20))}어치예요.</p><p class="cap" style="margin:0">‘그때 통장에 찍힐 금액’은 실제로 찍힐 숫자, ‘오늘 물가로 환산’은 지금 기준으로 얼마만큼의 생활인지예요.</p>`);
-  $$('#pBasis button', box).forEach((b) => { b.onclick = () => { plan.showToday = b.dataset.v === '1'; $$('#pBasis button', box).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); save(); compute(); }; });
-  $$('#pMode button', box).forEach((b) => { b.onclick = () => { plan.mode = b.dataset.v; if (plan.mode === 'goal' && plan.accSegs.length > 1 && plan.goalYears < 9) plan.accSegs = [{ from: 1, to: null, rate: 7 }]; save(); renderInput(); compute(); }; });
-  $$('#gBasis button', box).forEach((b) => { b.onclick = () => { $$('#gBasis button', box).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); plan.goalBasis = b.dataset.v; changed(); }; });
+  $$('#pMode button', box).forEach((b) => { b.onclick = () => { plan.mode = b.dataset.v; if (plan.mode === 'goal' && plan.accSegs.length > 1 && plan.goalYears < 9) plan.accSegs = [{ from: 1, to: null, rate: 7 }]; plan.calc = null; plan.scale = null; save(); renderInput(); compute(); drawCards(); }; });
   const parse = (v) => +String(v).replace(/[^\d.\-]/g, '');
   $$('[data-k]', box).forEach((x) => x.addEventListener('input', () => { const v = x.value.trim(); plan[x.dataset.k] = v === '' ? (x.dataset.k === 'saveUntilAge' ? null : 0) : parse(v); if (['goalAmount', 'expenseToday', 'initial', 'monthly', 'legacy'].includes(x.dataset.k) && v) { const pos = x.value.length; x.value = won(parse(v)); void pos; } changed(); }));
   $$('[data-pen]', box).forEach((x) => x.addEventListener('change', () => { const pe = plan.pensions[+x.dataset.pen]; const f = x.dataset.f; pe[f] = f === 'indexed' ? x.checked : f === 'kind' ? x.value : x.value === '' ? null : parse(x.value); changed(true); }));
@@ -178,10 +223,11 @@ function compute() {
   const p = plan;
   try { res = computePlan(p.mode === 'goal' ? { ...p, events: p.events.map((e) => ({ ...e, age: e.age })) } : p); } catch (e) { console.error(e); $('#planResult', root).innerHTML = `<p class="empty">${esc(e.message)}</p>`; return; }
   renderResult();
+  if (cardsApi) { if (p.mode !== 'goal') cardsApi.syncTarget(res.lp.needAtRetire); else cardsApi.refresh(); }
 }
 const monthsOf = () => (plan.mode === 'goal' ? res.M : res.lp.path.length - 1);
 const disc = (m) => Math.pow(1 + res.infl, m / 12);
-function shown(v, m) { return plan.showToday ? v / disc(m) : v; }
+function shown(v) { return v; } // 숫자는 언제나 그해 통장 숫자(오늘 돈은 맨 위 저울이 맡음)
 
 function renderResult() {
   const p = plan, R = $('#planResult', root), g = p.mode === 'goal';
@@ -189,38 +235,35 @@ function renderResult() {
   let verdict, kpis, hero;
   if (g) {
     const M = res.M, short = res.gap < 0;
-    verdict = `${p.goalYears}년 뒤 <b>${fmtKRW(shown(res.fv.fv, M))}</b>이 모여 목표 ${fmtKRW(shown(res.targetNominal, M))}${short ? `보다 <b>${fmtKRW(shown(-res.gap, M))}</b> 부족해요.` : `를 <b>${fmtKRW(shown(res.gap, M))}</b> 넘겨요.`}`
+    verdict = `${p.goalYears}년 뒤 <b>${fmtKRW(shown(res.fv.fv, M))}</b>이 모여 목표 ${fmtKRW(shown(res.targetNominal, M))}${short ? `보다 <b>${fmtKRW(shown(-res.gap, M))}</b> 부족해요.` : `을 <b>${fmtKRW(shown(res.gap, M))}</b> 넘겨요.`}`
       + (short && res.reqM.status === 'ok' ? ` 매달 <b>${fmtKRW(res.reqM.monthly)}</b>씩 모으면 채울 수 있어요.` : '')
       + (res.reqY.status === 'ok' ? ` 지금 계획대로면 ${Math.floor(res.reqY.months / 12)}년 ${res.reqY.months % 12}개월 뒤에 도달해요.` : '');
-    hero = { lb: short ? '부족' : '여유', v: fmtKRW(shown(Math.abs(res.gap), M)), alt: fmtKRW(p.showToday ? Math.abs(res.gap) : Math.abs(res.gap) / disc(M)), st: short ? 'caution' : 'good' };
+    hero = { lb: short ? '부족' : '여유', v: fmtKRW(shown(Math.abs(res.gap), M)), alt: fmtKRW(Math.abs(res.gap) / disc(M)), st: short ? 'caution' : 'good' };
     kpis = [
       [`목표(${thenYear()}년 숫자)`, fmtKRW(res.targetNominal), `오늘 돈 ${fmtKRW(res.targetToday)}`],
       ['예상 자산', fmtKRW(shown(res.fv.fv, M)), `넣은 돈 ${fmtKRW(res.fv.totalContrib)}`],
-      ['필요한 월 납입', res.reqMNominalTarget.status === 'ok' ? fmtKRW(res.reqMNominalTarget.monthly) : '이미 충분', `물가 반영 목표면 ${res.reqMRealTarget.status === 'ok' ? fmtKRW(res.reqMRealTarget.monthly) : '이미 충분'}`],
-      ['지금 한 번에 넣는다면', fmtKRW(res.pvNeeded), '적립 없이 지금 필요한 돈'],
-      ['필요한 수익률', res.reqR.status === 'ok' ? `구간마다 ${res.reqR.delta >= 0 ? '+' : ''}${(res.reqR.delta * 100).toFixed(2)}%p` : res.reqR.status === 'unreachable' ? '수익률만으론 어려움' : '–', res.alts.find((a) => a.id === 'rate')?.single != null ? `한 가지 수익률이면 연 ${fmtPct(res.alts.find((a) => a.id === 'rate').single)}` : ''],
+      ['지금 계획으로 닿는 때', res.reqY.status === 'ok' ? `${Math.floor(res.reqY.months / 12)}년 ${res.reqY.months % 12}개월 뒤` : '100년 안엔 어려움', res.reqY.status === 'ok' ? `${new Date().getFullYear() + Math.floor(res.reqY.months / 12)}년쯤` : '위 실행 목표에서 다른 길을 보세요'],
     ];
   } else {
     const lp = res.lp, Mr = res.Mr, short = res.gap < 0;
     verdict = `지금 계획대로면 ${p.retireAge}세에 <b>${fmtKRW(shown(lp.fvAtRetire, Mr))}</b>이 모이고, 필요 자금 ${fmtKRW(shown(lp.needAtRetire, Mr))}${short ? `보다 <b>${fmtKRW(shown(-res.gap, Mr))}</b> 부족해요.` : `보다 <b>${fmtKRW(shown(res.gap, Mr))}</b> 여유 있어요.`} `
       + (lp.depletionAge != null ? `자산은 <b>${lp.depletionAgeYears}세 ${lp.depletionAgeMonths}개월</b>에 바닥나요.` : `${p.endAge}세에도 ${fmtKRW(shown(lp.endBalance, lp.path.length - 1))}이 남아요.`);
-    hero = { lb: short ? '은퇴 때 부족' : '은퇴 때 여유', v: fmtKRW(shown(Math.abs(res.gap), Mr)), alt: fmtKRW(p.showToday ? Math.abs(res.gap) : Math.abs(res.gap) / disc(Mr)), st: short ? 'caution' : 'good' };
+    hero = { lb: short ? '은퇴 때 부족' : '은퇴 때 여유', v: fmtKRW(shown(Math.abs(res.gap), Mr)), alt: fmtKRW(Math.abs(res.gap) / disc(Mr)), st: short ? 'caution' : 'good' };
     const pen0 = lp.rows[0]?.pension || 0;
     kpis = [
-      [`필요 자금(${p.retireAge}세)`, fmtKRW(shown(lp.needAtRetire, Mr)), `${plan.showToday ? `${thenYear()}년 숫자` : '오늘 돈'} ${fmtKRW(plan.showToday ? lp.needAtRetire : lp.needToday)}`],
+      [`필요 자금(${p.retireAge}세)`, fmtKRW(lp.needAtRetire), `오늘 돈 ${fmtKRW(lp.needToday)}`],
       [`예상 자산(${p.retireAge}세)`, fmtKRW(shown(lp.fvAtRetire, Mr)), `넣은 돈 ${fmtKRW(lp.totalContrib)}`],
       ['은퇴 첫 달 생활비', fmtKRW(shown(lp.rows[0]?.expense || 0, Mr)), pen0 ? `연금 ${fmtKRW(shown(pen0, Mr))}` : '연금 없음(개시 전)'],
-      ['필요한 월 적립', res.alts.find((a) => a.id === 'monthly') ? fmtKRW(res.alts.find((a) => a.id === 'monthly').value) : '지금으로 충분', `지금 월 ${fmtKRW(p.monthly)}`],
+      lp.depletionAge != null ? ['자산이 바닥나는 나이', `${lp.depletionAgeYears}세 ${lp.depletionAgeMonths}개월`, '위 실행 목표에서 채우는 길을 보세요'] : [`${p.endAge}세에 남는 돈`, fmtKRW(lp.endBalance), `오늘 돈 ${fmtKRW(lp.endBalance / disc(lp.path.length - 1))}`],
     ];
   }
   R.innerHTML = `
     ${errs.length ? `<div class="stale-bar">⚠ ${esc(errs.join(' '))}</div>` : ''}
     <div class="plan-hero">
       <p class="verdict">${verdict}</p>
-      <div class="hero-lb"><span class="status-pill ${hero.st}">${hero.st === 'good' ? '✓' : '!'} ${hero.lb}</span> <span class="when-tag ${p.showToday ? 'now' : 'then'}">${p.showToday ? '오늘 돈' : `${thenYear()}년 통장 숫자`}</span></div>
+      <div class="hero-lb"><span class="status-pill ${hero.st}">${hero.st === 'good' ? '✓' : '!'} ${hero.lb}</span> <span class="when-tag then">${thenYear()}년 통장 숫자</span></div>
       <div class="hero">${hero.v}</div>
-      <div class="money-alt">= ${p.showToday ? `${thenYear()}년 통장 숫자로 ${esc(hero.alt)}` : `오늘 돈으로 ${esc(hero.alt)}어치`} <span class="when-tag ${p.showToday ? 'then' : 'now'}">${p.showToday ? `${thenYear()}년` : '오늘 돈'}</span></div>
-      ${valueBridge()}
+      <div class="money-alt">= 오늘 돈으로 ${esc(hero.alt)}어치 <button class="linkbtn" type="button" id="toScale">예상 자산을 저울에 올려 보기</button></div>
       ${res.alts.length ? `<div class="alt-chips" id="altChips">${res.alts.map((a, i) => `<button class="alt-chip" type="button" data-a="${i}" aria-pressed="${altPreview === i}"><b>${esc(altTitle(a))}</b>${esc(a.label)} · 누르면 그래프에 점선으로</button>`).join('')}</div>` : ''}
     </div>
     <div class="to-finder"><button class="btn small" type="button" id="toFinder">이 계획에 필요한 연 ${fmtPct(needRate())} 수익률을 내는 투자 규칙 찾기 →</button></div>
@@ -234,7 +277,8 @@ function renderResult() {
     <div class="section" id="trackBox"></div>
     <div class="section"><details class="more"><summary>연도별 표</summary><div id="yearTbl"></div></details></div>`;
   wireLifeBar(R);
-  $('#toFinder', R).onclick = () => { const yrs = plan.mode === 'goal' ? +plan.goalYears : (plan.retireAge - plan.age); sessionStorage.setItem('ss.finderPrefill', JSON.stringify({ targetCagr: +(needRate() * 100).toFixed(1), years: [5, 10, 15, 20].reduce((a, y) => (Math.abs(y - yrs) < Math.abs(a - yrs) ? y : a), 15) })); location.hash = '#finder'; window.dispatchEvent(new CustomEvent('finder:prefill', { detail: JSON.parse(sessionStorage.getItem('ss.finderPrefill')) })); };
+  $('#toFinder', R).onclick = () => goFinder(needRate() * 100, plan.mode === 'goal' ? +plan.goalYears : (plan.retireAge - plan.age));
+  $('#toScale', R)?.addEventListener('click', () => { const yrs = plan.mode === 'goal' ? +plan.goalYears : plan.retireAge - plan.age; plan.scale = { then: Math.round(plan.mode === 'goal' ? res.fv.fv : res.lp.fvAtRetire), years: Math.round(yrs), last: 'then' }; store('ss.plans', P); drawCards(); $('#goalCards', root).scrollIntoView({ behavior: 'smooth', block: 'start' }); });
   $$('#altChips [data-a]', R).forEach((b) => { b.onclick = () => { const i = +b.dataset.a; altPreview = altPreview === i ? null : i; renderResult(); }; });
   drawPlanChart();
   renderSegEditor();
@@ -296,21 +340,6 @@ function needRate() {
   const segs = plan.accSegs; const n = plan.mode === 'goal' ? +plan.goalYears : plan.retireAge - plan.age;
   let tot = 0; for (let y = 1; y <= n; y++) { const g = segs.find((x) => x.from <= y && (x.to == null || y <= x.to)) || segs[segs.length - 1]; tot += +g.rate; }
   return n > 0 ? tot / n / 100 : 0.05;
-}
-/** 지금 돈 vs 나중 돈: 같은 금액이 물가 때문에 얼마나 '작아지는지' 막대와 국밥값으로 */
-function valueBridge() {
-  const g = plan.mode === 'goal';
-  const M = g ? res.M : res.Mr;
-  const nominal = g ? res.fv.fv : res.lp.fvAtRetire;
-  const real = nominal / disc(M);
-  const yrs = M / 12, ratio = real / nominal;
-  const whenLb = g ? `${plan.goalYears}년 뒤(${new Date().getFullYear() + Math.round(yrs)}년)` : `${plan.retireAge}세(${new Date().getFullYear() + Math.round(yrs)}년)`;
-  const soup = 10000 * disc(M);
-  return `<div class="vbridge" aria-label="그때 돈과 오늘 돈 비교">
-    <div class="vb-row"><span class="vb-lb">${esc(whenLb)} 통장 숫자</span><span class="vb-bar"><i style="width:100%"></i></span><b>${fmtKRW(nominal)}</b></div>
-    <div class="vb-row real"><span class="vb-lb">오늘 돈으로 치면</span><span class="vb-bar"><i style="width:${(ratio * 100).toFixed(1)}%"></i></span><b>${fmtKRW(real)}</b></div>
-    <p class="vb-ex">🍜 물가가 해마다 ${plan.inflation}%씩 오르면 지금 1만원짜리 국밥이 ${Math.round(yrs)}년 뒤엔 <b>${Math.round(soup / 10) * 10 >= 10000 ? (Math.round(soup / 10) * 10).toLocaleString('ko-KR') : '1만'}원</b>. 같은 돈으로 살 수 있는 게 <b>${fmtPct(ratio, 0)}</b>로 줄어요.</p>
-  </div>`;
 }
 function altTitle(a) {
   if (a.id === 'monthly') return `월 ${fmtKRW(a.value)} 적립 (+${fmtKRW(a.value - a.from)})`;
