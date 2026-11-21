@@ -9,7 +9,7 @@ import { runBacktest } from '../core/engine.js';
 import { computeMetrics, monthlyTable, rolling, drawdown, drawdownEpisodes, assetStats } from '../core/metrics.js';
 import { monteCarlo } from '../core/montecarlo.js';
 import { parseCommand, defaultBtState, newPortfolio } from '../core/nlp.js';
-import { diagnose, evaluateAlt, altStrategy, story } from '../core/comment.js';
+import { diagnose, evaluateAlt, altStrategy, story, findAlternatives, ALT_GOALS } from '../core/comment.js';
 import { todayYm, ymAdd, parseYm, ymToIso, dayToYm } from '../core/dates.js';
 import { aiParse, hasKey } from '../core/ai.js';
 import { FUND_METRICS, isFundMetric } from '../core/fund.js';
@@ -876,11 +876,12 @@ function renderResults() {
     <div class="tm-legend" id="tmLegend"></div>
     <div class="readout" id="growthReadout"></div>
     <div class="chart-box"><div class="chart" id="growthChart" role="img" aria-label="성장 곡선"></div><div class="chart" id="ddBand" style="height:90px" role="img" aria-label="낙폭 띠"></div><div id="growthTable" hidden></div></div>
-    <div class="section"><div class="section-title">진단과 대안 <span class="cap">문제마다 같은 기간으로 다시 계산한 대안을 함께 보여줘요</span></div><div class="cards" id="diagCards"><p class="cap">계산 중…</p></div>
+    <div class="section"><div class="section-title">진단과 대안 <span class="cap">문제를 짚고, 지금 전략을 조금씩 바꾼 후보를 같은 기간으로 다시 계산해 목표별로 가장 나은 것을 골라요</span></div><div class="cards" id="diagCards"><p class="cap">계산 중…</p></div><div id="alt4"></div>
       <div class="row" style="margin-top:16px"><button class="btn" type="button" id="toPlan">노후 계획에 수익률 보내기</button><button class="btn ghost" type="button" id="share">링크 복사</button><button class="btn ghost" type="button" id="csv">CSV 내보내기</button></div></div>
     <nav class="subtabs" role="tablist" id="subtabs"></nav>
     <div class="subpanel" id="subpanel"></div>`;
   $$('[data-help]', R).forEach((b) => { b.onclick = () => helpPop(b, b.dataset.help); });
+  altPlot.clear();
   drawGrowth();
   $$('[data-scale]', R).forEach((b) => { b.onclick = () => { logScale = b.dataset.scale === 'log'; $$('[data-scale]', R).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); drawGrowth(); }; });
   $$('#resCur button', R).forEach((b) => { b.onclick = () => { if (b.dataset.v === st.currency) return; const k = st.currency === 'KRW' ? 1 : 1; void k; const fx = assetInfo('FX_USDKRW')?.p || 1400; st.initial = b.dataset.v === 'USD' ? Math.round(st.initial / fx) : Math.round(st.initial * fx / 10000) * 10000; if (st.flow?.amount) st.flow.amount = b.dataset.v === 'USD' ? Math.round(st.flow.amount / fx) : Math.round(st.flow.amount * fx / 10000) * 10000; st.currency = b.dataset.v; save(); renderSentence(); renderInput(); run(); }; });
@@ -907,11 +908,15 @@ function seriesList() {
   return list;
 }
 let hidden = new Set();
+const altPlot = new Map(); // 그래프에 겹쳐 그린 대안: 목표 id → {name, color, data, m}
+const dashSw = (c) => `background:repeating-linear-gradient(90deg, ${c} 0 6px, transparent 6px 9px)`;
 function drawGrowth() {
   const list = seriesList();
   const leg = $('#growthLegend', root);
-  leg.innerHTML = list.map((s, i) => `<button type="button" data-i="${i}" aria-pressed="${!hidden.has(i)}"><i style="background:${s.color}"></i><span class="ln">${esc(s.name)}</span><span class="lv"><b>${pa(s.m.totalReturn)}</b> · 연 ${fmtPct(s.m.cagr)}</span></button>`).join('');
-  $$('button', leg).forEach((b) => { b.onclick = () => { const i = +b.dataset.i; hidden.has(i) ? hidden.delete(i) : hidden.add(i); drawGrowth(); }; });
+  leg.innerHTML = list.map((s, i) => `<button type="button" data-i="${i}" aria-pressed="${!hidden.has(i)}"><i style="background:${s.color}"></i><span class="ln">${esc(s.name)}</span><span class="lv"><b>${pa(s.m.totalReturn)}</b> · 연 ${fmtPct(s.m.cagr)}</span></button>`).join('')
+    + [...altPlot].map(([g, a]) => `<button type="button" data-altleg="${g}" aria-pressed="true" title="누르면 그래프에서 빼요"><i style="${dashSw(a.color)}"></i><span class="ln">${esc(a.name)}</span><span class="lv"><b>${pa(a.m.totalReturn)}</b> · 연 ${fmtPct(a.m.cagr)}</span></button>`).join('');
+  $$('button[data-i]', leg).forEach((b) => { b.onclick = () => { const i = +b.dataset.i; hidden.has(i) ? hidden.delete(i) : hidden.add(i); drawGrowth(); }; });
+  $$('button[data-altleg]', leg).forEach((b) => { b.onclick = () => toggleAltPlot(b.dataset.altleg); });
   const cut = (n) => (n.length > 9 ? `${n.slice(0, 8)}…` : n);
   const series = list.map((s, i) => hidden.has(i) ? null : ({
     name: s.name, color: s.color, width: s.bm ? 1.5 : 2.2, z: s.bm ? 1 : 3,
@@ -920,6 +925,7 @@ function drawGrowth() {
     endText: { name: cut(s.name), value: `${arrow(s.m.totalReturn)} ${fmtPct(Math.abs(s.m.totalReturn), 0)}`, sub: `CAGR ${fmtPct(s.m.cagr)}`, cls: dirClass(s.m.totalReturn) },
     markArea: !s.bm && s.res.timing?.expo ? timingAreas(s.res, s.color) : undefined,
   })).filter(Boolean);
+  for (const [, a] of altPlot) series.push({ name: a.name, color: a.color, dashed: true, width: 1.8, z: 2, data: a.data, endText: { name: a.short, value: `${arrow(a.m.totalReturn)} ${fmtPct(Math.abs(a.m.totalReturn), 0)}`, sub: `CAGR ${fmtPct(a.m.cagr)}`, cls: dirClass(a.m.totalReturn) } });
   const r0 = list[0].res;
   if (r0.flows && r0.flows.some((f) => f)) series.push({ name: '넣은 돈', color: css('--text-3'), dashed: true, width: 1.5, step: 'end', data: Array.from(r0.days, (d, j) => [d * 864e5, r0.invested[j]]) });
   lineChart($('#growthChart', root), { series, log: logScale, yFmt: (v, axis) => (axis ? fmtMoneyShort(v, last.st.currency) : money(v)), readout: isMobile() ? $('#growthReadout', root) : null });
@@ -1211,31 +1217,75 @@ async function renderDiagnosis() {
   const box = $('#diagCards', root);
   const { runs, bench } = last;
   const r0 = runs[0];
-  const cards = diagnose(r0, bench, { altStyle: settings().altStyle, fmtMoney: money });
-  if (!cards.length) { box.innerHTML = `<div class="rcard"><span class="st good">양호</span><h4>큰 경고는 없어요</h4><p class="why">최대 낙폭 ${fmtPct(r0.m.mdd)}, 변동성 ${fmtPct(r0.m.vol)}${bench ? `, ${esc(shortBench(bench.key))} 대비 ${fmtPp(r0.m.excessCagr)}` : ''}.</p></div>`; return; }
-  box.innerHTML = cards.map((c, ci) => `<div class="rcard" data-ci="${ci}"><span class="st ${c.level}">${{ warning: '⚠ 경고', caution: '! 주의', info: 'ⓘ 참고' }[c.level]}</span><h4>${esc(c.title)}</h4><p class="why">${esc(c.why)}</p><div class="alts"><p class="cap">대안을 다시 계산하는 중…</p></div></div>`).join('');
   const gen = last;
-  for (let ci = 0; ci < cards.length; ci++) {
-    const c = cards[ci];
-    const evaluated = [];
-    for (const alt of c.alts) {
-      try { evaluated.push({ alt, out: await evaluateAlt(r0, alt, bench) }); } catch (e) { console.warn(e); }
+  // 1) 진단: 문제만 짧게(고갈이면 끝까지 버티는 인출액을 계산해 붙임)
+  const cards = diagnose(r0, bench, { altStyle: settings().altStyle, fmtMoney: money });
+  box.innerHTML = cards.length
+    ? cards.map((c, ci) => `<div class="rcard" data-ci="${ci}"><span class="st ${c.level}">${{ warning: '⚠ 경고', caution: '! 주의', info: 'ⓘ 참고' }[c.level]}</span><h4>${esc(c.title)}</h4><p class="why">${esc(c.why)}</p>${c.id === 'B10' ? '<div class="alts"><p class="cap">버틸 수 있는 인출액 계산 중…</p></div>' : ''}</div>`).join('')
+    : `<div class="rcard"><span class="st good">양호</span><h4>큰 경고는 없어요</h4><p class="why">최대 낙폭 ${fmtPct(r0.m.mdd)}, 변동성 ${fmtPct(r0.m.vol)}${bench ? `, ${esc(shortBench(bench.key))} 대비 ${fmtPp(r0.m.excessCagr)}` : ''}.</p></div>`;
+  const b10 = cards.findIndex((c) => c.id === 'B10');
+  if (b10 >= 0) {
+    try {
+      const out = await evaluateAlt(r0, { kind: 'solveWithdraw' }, bench);
       if (gen !== last) return;
-    }
-    const cardEl = $(`.rcard[data-ci="${ci}"] .alts`, root);
-    if (!cardEl) return;
-    if (!evaluated.length) { cardEl.closest('.rcard').remove(); continue; }
-    cardEl.innerHTML = evaluated.map(({ alt, out }, ai) => {
-      const a = r0.m, b = out.m;
-      const lbl = alt.kind === 'solveWithdraw' ? `인출을 ${alt.kind ? money(out.withdraw) : ''}로 줄이면` : alt.label;
-      return `<div class="alt"><b>대안 ${String.fromCharCode(65 + ai)}</b> ${esc(lbl)}${out.approx ? ' <span class="cap">(월간 혼합 근사)</span>' : ''}</div>
-        ${dumbbell([['연환산 수익률', a.cagr, b.cagr, true], ['최대 낙폭', a.mdd, b.mdd, true], ['변동성', a.vol, b.vol, false]])}
-        ${out.strat && alt.kind !== 'extend' ? `<div class="row" style="margin-bottom:12px"><button class="btn small" type="button" data-alt="${ci}-${ai}">이 대안으로 비교</button></div>` : ''}`;
-    }).join('') + '<p class="cap">같은 과거 기간에 맞춰 계산한 대안이라 미래에도 같은 효과를 보장하지는 않아요.</p>';
-    evaluated.forEach(({ out }, ai) => {
-      $(`[data-alt="${ci}-${ai}"]`, cardEl)?.addEventListener('click', () => addAltPortfolio(out.strat, evaluated[ai].alt.label));
-    });
+      const el = $(`.rcard[data-ci="${b10}"] .alts`, root);
+      if (el) { el.innerHTML = `<p class="why">인출을 <b>${money(out.withdraw)}</b>로 줄이면 끝까지 버텨요(연 ${fmtPct(out.m.cagr)}).</p><div class="row"><button class="btn small" type="button" data-wd>이 인출액으로 비교</button></div>`; $('[data-wd]', el).onclick = () => addAltPortfolio(out.strat, `인출 ${money(out.withdraw)}`); }
+    } catch (e) { console.warn(e); }
   }
+  // 2) 목표별 대안 4가지
+  const A = $('#alt4', root);
+  if (!A) return;
+  A.innerHTML = '<div class="alt4-head"><b>이렇게 바꿔 보면</b><span class="cap" id="alt4Prog">후보를 계산하는 중…</span></div>';
+  let out;
+  try {
+    out = await findAlternatives(r0, bench, { onProgress: (i, n) => { const el = $('#alt4Prog', root); if (el && gen === last) el.textContent = `후보 ${i}/${n}개 계산 중…`; } });
+  } catch (e) { console.warn(e); A.innerHTML = ''; return; }
+  if (gen !== last) return;
+  const base = out.base;
+  const G_COLOR = { sharpe: '--compare-3', vol: '--compare-4', mdd: '--compare-5', cagr: '--compare-6' };
+  const pp = (d) => `${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%p`;
+  const cell = (lb, v, d, good, on) => {
+    const tone = Math.abs(d) < 1e-9 ? '' : good ? 't-good' : 't-bad';
+    return `<div class="${on ? 'on' : ''}"><dt>${lb}</dt><dd><b>${v}</b><small class="${tone}">${d === null ? '' : lb === '샤프 지수' ? `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}` : pp(d)}</small></dd></div>`;
+  };
+  A.innerHTML = `<div class="alt4-head"><b>이렇게 바꿔 보면</b><span class="cap">지금 전략: 연 ${fmtPct(base.cagr)} · 최대 낙폭 ${fmtPct(base.mdd)} · 변동성 ${fmtPct(base.vol)} · 샤프 ${base.sharpe.toFixed(2)} — 비중·리밸런싱·ETF 섞기·하락장 쉬기 후보 ${out.tried}개를 같은 기간으로 계산했어요</span></div>
+    <div class="alt4">${ALT_GOALS.map((g) => {
+      const p = out.picks[g.id];
+      const color = css(G_COLOR[g.id]) || seriesColor(3);
+      if (!p) return `<article class="alt4-card none" style="--c:${color}"><header><span class="alt4-goal">${g.label}</span></header><h4>지금 전략이 후보 중 가장 나아요</h4><p class="cap">${out.tried}개 후보 중 ${g.short}을(를) 더 좋게 만든 것이 없었어요.</p></article>`;
+      const m = p.m;
+      return `<article class="alt4-card" data-g="${g.id}" style="--c:${color}">
+        <header><span class="alt4-goal">${g.label}</span><button class="btn small alt4-plot" type="button" data-plot="${g.id}" aria-pressed="${altPlot.has(g.id)}"><i style="${dashSw(color)}"></i><span>${altPlot.has(g.id) ? '그래프에서 빼기' : '그래프에 표시'}</span></button></header>
+        <h4>${esc(p.label)}</h4>
+        <p class="cap alt4-detail">${esc(altDetail(p))}</p>
+        <dl class="alt4-m">${cell('연환산 수익률', fmtPct(m.cagr), m.cagr - base.cagr, m.cagr >= base.cagr, g.id === 'cagr')}${cell('최대 낙폭', fmtPct(m.mdd), m.mdd - base.mdd, m.mdd >= base.mdd, g.id === 'mdd')}${cell('변동성', fmtPct(m.vol), m.vol - base.vol, m.vol <= base.vol, g.id === 'vol')}${cell('샤프 지수', m.sharpe.toFixed(2), m.sharpe - base.sharpe, m.sharpe >= base.sharpe, g.id === 'sharpe')}</dl>
+        <footer>${p.strat ? `<button class="btn small ghost" type="button" data-cmp="${g.id}">이 대안으로 비교</button>` : ''}${p.approx ? '<span class="cap">월간 혼합 근사</span>' : ''}${p.relaxed ? '<span class="cap">다른 지표를 조금 양보한 안</span>' : ''}</footer>
+      </article>`;
+    }).join('')}</div>
+    <p class="cap">같은 과거 기간에 맞춰 고른 대안이라 미래에도 같은 효과를 보장하지는 않아요. 낮추기 대안은 수익률이 지금의 75% 아래로 떨어지지 않는 것, 수익률 대안은 낙폭이 5%p 넘게 깊어지지 않는 것 중에서 골랐어요.</p>`;
+  $$('[data-plot]', A).forEach((b) => { b.onclick = () => toggleAltPlot(b.dataset.plot, out.picks[b.dataset.plot], css(G_COLOR[b.dataset.plot])); });
+  $$('[data-cmp]', A).forEach((b) => { b.onclick = () => { const p = out.picks[b.dataset.cmp]; addAltPortfolio(p.strat, p.label); }; });
+  altPicks = out.picks; altColors = G_COLOR;
+}
+let altPicks = {}, altColors = {};
+function altDetail(p) {
+  if (p.approx) return `지금 전략 ${100 - p.pct}% + ${label(p.key)} ${p.pct}%를 매달 맞춰 섞은 결과`;
+  const s = p.strat;
+  const tail = `${s.timing?.kind ? ' · 10개월선 아래면 쉬기' : ''}`;
+  if (s.kind === 'rank') return `${pfText({ kind: 'rank', rank: s.rank })} · ${REB[s.rebalance] || s.rebalance} 바꾸기${tail}`;
+  const tot = s.assets.reduce((t, a) => t + +a.w, 0) || 1;
+  return `${s.assets.map((a) => `${short(a.key)} ${Math.round(+a.w / tot * 100)}`).join(' · ')} · 리밸런싱 ${s.rebalance === 'band' ? `밴드 ${s.band?.abs ?? 5}%p` : REB[s.rebalance] || s.rebalance}${tail}`;
+}
+/** 대안을 위 성장 그래프에 겹쳐 그리거나 뺌 */
+function toggleAltPlot(g, p = altPicks[g], color = css(altColors[g] || '--compare-3')) {
+  if (altPlot.has(g)) altPlot.delete(g);
+  else if (p) {
+    const goal = ALT_GOALS.find((x) => x.id === g);
+    const data = p.res.days ? Array.from(p.res.days, (d, j) => [d * 864e5, p.res.value[j]]) : p.res.monthly.map((x) => [Date.UTC(Math.floor(x.ym / 100), x.ym % 100, 0), x.v]);
+    altPlot.set(g, { name: `대안·${goal.short}: ${p.label}`.slice(0, 34), short: `대안·${goal.short}`, color, data, m: p.m });
+  }
+  drawGrowth();
+  $$('[data-plot]', root).forEach((b) => { const on = altPlot.has(b.dataset.plot); b.setAttribute('aria-pressed', String(on)); const t = b.querySelector('span'); if (t) t.textContent = on ? '그래프에서 빼기' : '그래프에 표시'; });
 }
 function dumbbell(rows) {
   return `<div class="dumb">${rows.map(([n, a, b]) => {

@@ -1,6 +1,6 @@
 // 결과 해석: 숫자를 문장으로, 문제에는 반드시 '다시 계산한' 구체 대안을 붙입니다.
 import { runBacktest } from './engine.js';
-import { computeMetrics } from './metrics.js';
+import { computeMetrics, assetStats } from './metrics.js';
 import { assetInfo } from './data.js';
 
 const nm = (k) => assetInfo(k)?.n || k;
@@ -114,6 +114,114 @@ export async function evaluateAlt(run, alt, bench) {
   let b = bench?.res || null;
   if (alt.kind === 'extend' && bench) b = await runBacktest({ ...bench.strat, start: ymIso(res.startYm), end: ymIso(res.endYm) });
   return { m: computeMetrics(res, b, 0), strat: s, res };
+}
+
+// ------------------------------------------------------------------ 목표별 대안 4가지
+/** 대안의 목표: 무엇을 좋게 하려는지와, 그때 다른 지표를 얼마나 양보해도 되는지 */
+export const ALT_GOALS = [
+  { id: 'sharpe', label: '샤프 지수 높이기', short: '샤프', better: (a, b) => a.sharpe - b.sharpe, min: 0.02 },
+  { id: 'vol', label: '변동성 낮추기', short: '변동성', better: (a, b) => b.vol - a.vol, min: 0.003 },
+  { id: 'mdd', label: '최대 낙폭 줄이기', short: '낙폭', better: (a, b) => a.mdd - b.mdd, min: 0.005 },
+  { id: 'cagr', label: '수익률 높이기', short: '수익률', better: (a, b) => a.cagr - b.cagr, min: 0.002 },
+];
+const ETF_SETS = {
+  US: { def: [['BND', '미국 종합채권'], ['IEF', '미국채 7-10년'], ['GLD', '금'], ['USMV', '미국 최소변동성'], ['SCHD', '미국 배당']], grow: [['QQQ', '나스닥100'], ['SPY', 'S&P 500']] },
+  KR: { def: [['114260', '국고채 3년'], ['148070', '국고채 10년'], ['132030', '금'], ['153130', '단기채권']], grow: [['069500', '코스피200'], ['133690', '미국 나스닥100']] },
+};
+const REB_NAME = { none: '안 함', M: '매월', Q: '분기마다', S: '반기마다', A: '매년', band: '밴드' };
+
+/** 지금 전략에서 한 가지씩 바꾼 후보들(비중·리밸런싱·ETF 섞기·타이밍·순위 조건) */
+export function altCandidates(run) {
+  const st = run.strat, out = [];
+  const startYmd = run.res.startYm * 100 + 1;
+  const okFrom = (k) => (assetInfo(k)?.s || 99999999) <= startYmd;
+  const add = (id, label, kind, extra) => out.push({ id, label, kind, ...extra });
+  if (st.kind === 'static') {
+    const tot = st.assets.reduce((t, a) => t + +a.w, 0) || 1;
+    const mkt = st.assets.filter((a) => assetInfo(a.key)?.m === 'KR').length > st.assets.length / 2 ? 'KR' : 'US';
+    // 리밸런싱 주기
+    for (const r of ['M', 'Q', 'A', 'none']) if (r !== st.rebalance && st.assets.length > 1) add(`reb-${r}`, `리밸런싱 ${REB_NAME[st.rebalance] || st.rebalance} → ${REB_NAME[r]}`, 'strat', { strat: { ...st, rebalance: r } });
+    if (st.rebalance !== 'band' && st.assets.length > 1) add('reb-band', `리밸런싱을 밴드(비중이 5%p 벗어날 때)로`, 'strat', { strat: { ...st, rebalance: 'band', band: { abs: 5, rel: 0 } } });
+    // 비중
+    if (st.assets.length > 1) {
+      const eq = 100 / st.assets.length;
+      if (st.assets.some((a) => Math.abs(+a.w / tot * 100 - eq) > 1)) add('w-eq', '비중을 똑같이 나누기', 'strat', { strat: { ...st, assets: st.assets.map((a) => ({ ...a, w: eq })) } });
+      try {
+        const vols = new Map(assetStats(run.res).stats.map((x) => [x.key, x.vol]));
+        if (st.assets.every((a) => vols.get(a.key) > 0)) {
+          const inv = st.assets.map((a) => 1 / vols.get(a.key)), t = inv.reduce((x, y) => x + y, 0);
+          const w = st.assets.map((a, i) => ({ ...a, w: Math.round(inv[i] / t * 1000) / 10 }));
+          if (w.some((a, i) => Math.abs(a.w - +st.assets[i].w / tot * 100) > 2)) add('w-iv', '덜 흔들리는 종목에 더 싣기(변동성 반비례 비중)', 'strat', { strat: { ...st, assets: w } });
+        }
+      } catch { /* 자산별 통계가 없으면 건너뜀 */ }
+      if (st.assets.length >= 4 && st.assets.some((a) => +a.w / tot > 0.3)) add('w-cap', '한 종목 최대 25%로 묶기', 'alt', { alt: { kind: 'cap', cap: 25 } });
+    }
+    // ETF 섞기
+    for (const [k, n] of [...ETF_SETS[mkt].def, ...ETF_SETS[mkt].grow]) {
+      if (!okFrom(k)) continue;
+      const have = st.assets.find((a) => a.key === k);
+      if (have && +have.w / tot >= 0.5) continue;
+      for (const pct of [20, 40]) add(`mix-${k}-${pct}`, `${n}(${k}) ${pct}% ${have ? '더 넣기' : '섞기'}`, 'alt', { alt: { kind: 'mix', key: k, pct } });
+    }
+    // 하락장 쉬기
+    if (!st.timing?.kind) add('tm-ma10', `${mkt === 'KR' ? '코스피200' : 'S&P 500'}이 10개월 평균 아래면 단기채로 쉬기`, 'strat', { strat: { ...st, timing: { kind: 'switch', signal: mkt === 'KR' ? '069500' : 'SPY', sell: { type: 'ma', n: 10, unit: 'm', op: 'below' }, buy: null, to: mkt === 'KR' ? '153130' : 'BIL', check: 'M' } } });
+  } else {
+    const r = st.rank, mkt = r.group.startsWith('KR') ? 'KR' : 'US';
+    const n = r.top - (r.from || 1) + 1;
+    if (r.top * 2 <= 30) add('rk-wide', `종목 수 ${n}개 → ${r.top * 2 - (r.from || 1) + 1}개`, 'strat', { strat: { ...st, rank: { ...r, top: r.top * 2 } } });
+    if (n >= 4) add('rk-narrow', `종목 수 ${n}개 → ${Math.ceil(n / 2)}개`, 'strat', { strat: { ...st, rank: { ...r, top: (r.from || 1) + Math.ceil(n / 2) - 1 } } });
+    for (const w of ['equal', 'invvol', 'mcap']) if (w !== r.weighting) add(`rk-w-${w}`, `비중을 ${{ equal: '똑같이', invvol: '변동성 반비례로', mcap: '시가총액 비례로' }[w]}`, 'strat', { strat: { ...st, rank: { ...r, weighting: w } } });
+    for (const f of ['M', 'Q', 'A']) if (f !== st.rebalance) add(`rk-reb-${f}`, `종목 바꾸기 ${REB_NAME[st.rebalance] || st.rebalance} → ${REB_NAME[f]}`, 'strat', { strat: { ...st, rebalance: f } });
+    for (const [m, l] of [['mcap', '시가총액'], ['mom', '12개월 모멘텀'], ['lowvol', '낮은 변동성']]) if (m !== r.metric) add(`rk-m-${m}`, `순위 기준을 ${l}로`, 'strat', { strat: { ...st, rank: { ...r, metric: m, lookback: 12, skip: 0 } } });
+    if (!st.timing?.kind) add('tm-ma10', `${mkt === 'KR' ? '코스피200' : 'S&P 500'}이 10개월 평균 아래면 단기채로 쉬기`, 'strat', { strat: { ...st, timing: { kind: 'switch', signal: mkt === 'KR' ? '069500' : 'SPY', sell: { type: 'ma', n: 10, unit: 'm', op: 'below' }, buy: null, to: mkt === 'KR' ? '153130' : 'BIL', check: 'M' } } });
+    for (const [k, nm2] of [...ETF_SETS[mkt].def.slice(0, 3), ...ETF_SETS[mkt].grow.slice(0, 1)]) if (okFrom(k)) for (const pct of [20, 40]) add(`bl-${k}-${pct}`, `${nm2}(${k}) ${pct}% 함께 들고 가기`, 'blend', { key: k, pct });
+  }
+  return out;
+}
+
+/** 후보를 모두 같은 기간으로 계산하고, 목표마다 가장 나은 것을 고름(겹치지 않게) */
+export async function findAlternatives(run, bench, { onProgress } = {}) {
+  const cands = altCandidates(run);
+  const base = run.m, period = { start: ymIso(run.res.startYm), end: ymIso(run.res.endYm) };
+  const done = [];
+  for (let i = 0; i < cands.length; i++) {
+    const c = cands[i];
+    onProgress?.(i, cands.length);
+    try {
+      if (c.kind === 'blend') {
+        const other = await runBacktest({ ...run.strat, kind: 'static', assets: [{ key: c.key, w: 100 }], rebalance: 'none', timing: null, ...period });
+        const res = blendMonthly(run.res, other, 1 - c.pct / 100);
+        done.push({ ...c, res, m: computeMetrics(res, bench?.res || null, 0), approx: true, strat: null });
+      } else {
+        const s = c.kind === 'alt' ? altStrategy(run.strat, c.alt, bench?.key) : structuredClone(c.strat);
+        Object.assign(s, period);
+        const res = await runBacktest(s);
+        if (res.startYm !== run.res.startYm) continue; // 기간이 달라지면 비교하지 않음
+        done.push({ ...c, res, m: computeMetrics(res, bench?.res || null, 0), strat: s });
+      }
+    } catch (e) { console.warn('대안 계산 실패', c.id, e); }
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  onProgress?.(cands.length, cands.length);
+  // 목표별 조건: 낮추기 목표는 수익률을 크게 깎지 않게, 수익률 목표는 낙폭·변동성을 크게 키우지 않게
+  const cagrFloor = base.cagr > 0 ? base.cagr * 0.75 : base.cagr - 0.02;
+  const fits = {
+    sharpe: () => true,
+    vol: (m) => m.cagr >= cagrFloor,
+    mdd: (m) => m.cagr >= cagrFloor,
+    cagr: (m) => m.mdd >= base.mdd - 0.05 && m.vol <= base.vol * 1.25,
+  };
+  const used = new Set(), picks = {};
+  for (const g of ALT_GOALS) {
+    const better = done.filter((c) => g.better(c.m, base) >= g.min);
+    const ranked = (arr) => arr.slice().sort((a, b) => g.better(b.m, a.m));
+    const strict = ranked(better.filter((c) => fits[g.id](c.m)));
+    const loose = ranked(better);
+    const pick = strict.find((c) => !used.has(c.id)) || strict[0] || loose.find((c) => !used.has(c.id)) || loose[0] || null;
+    if (pick) used.add(pick.id);
+    picks[g.id] = pick ? { ...pick, relaxed: !strict.includes(pick) } : null;
+  }
+  return { base, tried: done.length, picks };
 }
 
 function ymIso(ym) { return `${Math.floor(ym / 100)}-${String(ym % 100).padStart(2, '0')}`; }

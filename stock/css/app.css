@@ -1066,3 +1066,27 @@ a.btn { text-decoration: none; }
 .ff-inputs { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 8px; }
 @media (max-width: 480px) { .ff-inputs { grid-template-columns: 1fr; } }
 .ff-inputs .input-unit .input { padding-right: 62px; }
+/* 진단과 대안: 목표별 대안 4가지(넓은 화면 한 줄) */
+.alt4-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin: var(--sp-5) 0 var(--sp-3); }
+.alt4-head b { font-size: var(--fs-section); font-weight: 720; }
+.alt4 { display: grid; gap: var(--sp-3); grid-template-columns: 1fr; margin-bottom: var(--sp-3); }
+@media (min-width: 640px) { .alt4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .alt4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.alt4-card { display: flex; flex-direction: column; gap: 8px; padding: var(--sp-4); border: 1px solid var(--border); border-top: 4px solid var(--c); border-radius: var(--r-panel); background: var(--bg-surface); min-width: 0; }
+.alt4-card.none { opacity: .75; }
+.alt4-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.alt4-goal { font-size: var(--fs-caption); font-weight: 760; color: var(--c); letter-spacing: .01em; }
+.alt4-card h4 { margin: 0; font-size: 15px; line-height: 1.45; font-weight: 720; }
+.alt4-detail { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.alt4-m { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 2px 0 0; }
+.alt4-m > div { padding: 8px 10px; border-radius: var(--r-ctrl); background: var(--bg-sunken); border: 1px solid transparent; min-width: 0; }
+.alt4-m > div.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--bg-sunken)); }
+.alt4-m dt { font-size: 11.5px; color: var(--text-3); font-weight: 650; }
+.alt4-m dd { margin: 2px 0 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.alt4-m dd b { font-size: 17px; font-weight: 760; font-variant-numeric: tabular-nums; }
+.alt4-m dd small { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.alt4-m .on dt { color: var(--c); }
+.alt4-card footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+.alt4-plot { display: inline-flex; align-items: center; gap: 6px; }
+.alt4-plot i { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+.alt4-plot[aria-pressed="true"] { border-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); }
