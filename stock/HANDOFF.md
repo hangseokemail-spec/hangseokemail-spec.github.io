@@ -158,44 +158,13 @@
 
 | 요청 | 반영 | 주요 위치 |
 |---|---|---|
-| 1·8 금액 옆 한글 읽기(원·달러, 모든 탭) | 입력칸·KPI·표 옆 읽기, Fable 규칙(6절) | `ui/format.js`, `ui/dom.js` moneyHints |
-| 2 비교 대상 여러 개 | 최대 6개, 시트 탭 3개(지수 / 종목 검색 / 지난 실행), 문장 '…랑 비교' | `views/backtest.js` openCompare, `core/nlp.js` comparisonTargets |
-| 3 보유 변화 카드, 새 종목 색 | 카드형, 새로 들어온 종목 형광펜, 팔았다 다시 산 구간은 한 카드, 리밸런싱 카드, '변화 없는 것도 보기' | `backtest.js` renderHoldingsCards |
-| 4 롤링 빈 화면 | 기간에 맞춰 창 길이 자동 조정 | `backtest.js` 롤링 |
-| 5·15 디자이너(Opus·GPT) + Fable 컨펌 | Opus 안과 Fable 컨펌 반영 완료, GPT 안은 PC Codex로 대기 | `css/app.css` 토큰, `tools/agents/` |
-| 6 계획을 사람별로 저장, 최근 5회 | 계정 vault, 계획마다 5회, 칩을 누르면 복원(되돌리기 가능) | `views/plan.js` renderHistoryChips |
-| 7 로그인(마스터만) | 마스터는 해시만 저장, 개인 탭 잠금 → 이후 가입창 추가 | `core/auth.js`, `config/accounts.json` |
-| 9·12 목표·노후 직관성, 지금 돈/나중 돈 | 질문형 단계, '그해 통장 숫자 / 오늘 돈' 스위치, 돈의 가치 막대(국밥 비유), "= 오늘 돈으로 X어치" | `plan.js` valueBridge, thenYear |
-| 10 느림 | 계산 11초 → 0.04초, IndexedDB 캐시, 미리 받기, modulepreload | `core/plan.js`, `core/data.js`, `index.html` |
-| 11 목돈 버튼이 안 눌림 | 결과 아래 '목돈' 구역: 나이 띠, 48px 큰 버튼 2개, 핀을 눌러 고치기, 띠를 누르면 그 나이에 추가 | `plan.js` lifeBar, editEvent |
-| 13 넓은 화면 가로 배치 | 1280px 이상에서 4칸(1.2fr 1.2fr 1fr .9fr) | `css` `.bt-grid` |
-| 14 최근 10개와 비교, 더 밝게 | 최근 실행 띠(불러오기·비교), 딤 다크 | `backtest.js` historyStrip |
-| 16 "레버리지 etf는 빼고"가 안 됨 | 분류 제외: 레버리지·인버스·채권·현금·원자재·단일종목·커버드콜 | `nlp.js` findExcludeCats, `engine.js` excludeCats |
-| 17 해석은 어떻게? | 규칙 기반 + 못 알아들은 말이 있으면 Claude 자동(키가 있을 때) | `nlp.js` leftoverWords, `backtest.js` interpret, `core/ai.js` |
-| 최대 기간(20년?) | 미국·지수 1985년부터, 30년·최대 프리셋 | `tools/fetch_data.py`, `backtest.js` |
-| 조건부 리밸런싱(SPY −15% 등) | 타이밍 '리밸런싱' 종류(trigger), 프리셋 dd15reb, 밴드 리밸런싱 | `core/signals.js` |
-| 그래프에 최종 %와 CAGR | 선 끝 라벨 3줄(이름 / +520% / CAGR 20.0%) | `ui/charts.js`, `backtest.js` drawGrowth |
-| 매수·매도 타이밍 | 프리셋 11개 + 직접 설정(이동평균·크로스·모멘텀·낙폭·RSI·VIX·볼린저·MACD·트레일링 스톱·변동성 맞추기), 다음 거래일 실행 | `signals.js`, `backtest.js` openTiming |
-| 목표로 전략 추천(종목이 아닌 규칙) | 전략 찾기 탭 | `core/finder.js`, `views/finder.js` |
-| 가입창(아이디·이메일·비번, DB 저장) | 가입·로그인 탭, 계정 저장소에 기억 | `auth.js` signup, `app.js` openLogin, `tools/apps_script/Code.gs` |
-| Claude 넘김이 실제로 동작하나? | 실제 API를 호출한다. 가짜 키로 401을 받아 경로가 열려 있음을 확인 | `core/ai.js` |
+| 오전 요청(금액 한글 읽기, 비교 대상 여러 개, 보유 변화 카드, 롤링, 디자이너·컨펌, 계획 저장, 로그인·가입, 목표·노후 직관성, 속도, 목돈, 넓은 화면, 최근 실행, 제외어, Claude 넘김, 1985년, 조건부 리밸런싱, 끝 라벨, 타이밍, 전략 찾기) | 1-1과 4~7절 | 요청별 표는 `git show fc3b507:stock/HANDOFF.md`의 2절 |
 | 문장 해석하면 P1이 사라짐, 비교 창에 P1·P2 | 여러 포트폴리오일 때 편집 중인 탭에만 넣기(되돌리기·'전부 새로 만들기'), 비교 창에 내 포트폴리오 켜고 끄기·새로 만들기 | `backtest.js` interpret, mergeIntoActive, openCompare, addPortfolio, run(inc) |
 | 추천 1번 규칙이 '언제 돌아오나' 불명확 | 행동 규칙(평소·확인·팔기·돌아오기)·피신 횟수·지금 상태, 휴대폰 카드 넘침 수정 | `core/finder.js` candRule, `views/finder.js` ruleBlock |
 | 내 자산 새 계좌 안 눌림·계좌 정리·모아보기·원화/달러 총액 | 창 안에서 바로 새 계좌, 별칭 중심, 계좌 칩·계좌별 한눈에, 통화별 총액·누른 순간 환율 | `views/assets.js`, `core/holdings.js` refreshFx·valuate |
 | 목표·노후 저울·실행 목표 | 맨 위 카드 두 장(팀 협의: Opus 기획 → GPT 그림 → Fable 컨펌) | `views/goalcards.js`, `core/goalcalc.js`, `docs/plan_redesign/` |
 | 계정 저장소 배포 | 두 번 클릭 키트로 배포, 연결·동기화 확인 끝(1-2 ①) | `tools/apps_script/`, `config/backend.json` |
-| (오후) 저울 괄호 한글·'N년 뒤'·숫자로 넣기·목표=그때 통장 숫자 장치 | 1-1 목표 탭 | `views/goalcards.js` |
-| 목표 탭/노후 탭 분리, 목표가 노후 기본값 | 탭 5개, `ss.goal`, `plan.link` | `app.js`, `views/goal.js`, `views/plan.js` |
-| 노후 가로 입력·바로 아래 그래프·같은 높이 카드·친절한 맥락 | Fable 조건부 컨펌 6개 반영 | `views/plan.js`, `css/app.css` 끝 |
-| 저울·조건 한 줄, 답은 아래(태블릿 이상) | `.goal-cond`, `.ganswer` | `goalcards.js` |
-| 부담을 줄이는 길 숫자 직접 입력 | 대안마다 칸 하나 + 이걸로 | `goalcards.js` ALT·whatIf |
-| 최근 기록 5개·작은 칩 | 한 줄 칩 | `plan.js` renderHistoryChips |
-| 제목 '풍족한 노후를 위해', 좋음 초록·나쁨 빨강, 도장 | `--st-good/--st-bad`, `.stamp` | `plan.js` renderResult |
-| 백테스트 다음 것들(표본 밖·과거 대형주 제외) | 끝 라벨 정리, ▲▼, 보유 지도, 휴대폰 조건 카드, 몬테카를로 | `charts.js`, `backtest.js`, `core/montecarlo.js` |
-| (저녁) 대안: 그래프에 비교 / 목표 설정 변경 | 1-1 목표 탭 | `goalcards.js` scen·emit, `goal.js` drawPath |
-| 최근 기록 칩 좁고 높게, 거꾸로 칸 맞춤, 계획 판정 도장, 용어, 자산 표 설명 | 1-1 노후 탭 | `plan.js` trackVerdict·moneyExplainHtml |
-| 휴대폰 내 자산 '모이' 버튼 | 칩이 잘린 것 → 칩 줄 한 줄 | `assets.js` `.as-toolbar` |
-| 자산 목표 리포트 탭, 내 자산 맨 왼쪽 | 1-1 리포트 탭 | `report.js`, `index.html`, `app.js` |
+| 오후·저녁 요청(목표/노후 분리, 저울·숫자로 넣기, 가로 입력, 도장·색, 대안 그래프 비교·목표 설정 변경, 기록 칩, 계획 판정 도장, 자산 표 설명, 휴대폰 내 자산 칩 잘림, 리포트 탭, 내 자산 맨 왼쪽, 백테스트 끝 라벨·▲▼·보유 지도·휴대폰 조건 카드·몬테카를로) | 1-1 각 탭 | 커밋 `2931f24`, `09f1a1f` |
 | 분할·합병 반영? | 미국은 야후 수정 종가로 반영. 국내 일부는 분할·합병·감자 날이 보정 안 돼 있어 정리(8절) | `tools/fetch_data.py` clean_series |
 
 ---
