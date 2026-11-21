@@ -437,10 +437,32 @@ input[type="month"], input[type="date"] { min-width: 0; }
   .bt-input .run-bar { display: flex; justify-content: flex-end; margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
   .bt-input .run-bar .btn.big { width: auto; min-width: 220px; }
 }
-@media (min-width: 1280px) { .bt-grid { grid-template-columns: 1.2fr 1.2fr 1fr .9fr; } }
-@media (min-width: 1024px) and (max-width: 1279px) { .bt-grid { grid-template-columns: 1.3fr 1fr 1fr; row-gap: var(--sp-4); } .bt-grid > .col-cmp { grid-column: 1 / -1; padding-left: 0; border-left: 0; border-top: 1px solid var(--border); padding-top: var(--sp-3); } }
+/* 넓은 화면: 담을 것 | 사고팔 때 + 비교 대상(위아래) | 기간과 돈 — 세 칸 높이가 비슷하게(2026-11-21) */
+@media (min-width: 1024px) {
+  .bt-grid { grid-template-columns: minmax(300px, 1.45fr) minmax(240px, 1fr) minmax(280px, 1.1fr); }
+  .col-side { display: grid; align-content: start; gap: var(--sp-4); }
+  .col-side > .col-cmp { border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+  /* 조건 칸 세로 줄이기: 입력칸 36px, 묶음 사이 10px */
+  .bt-input .input, .bt-input select.input { min-height: 36px; padding-top: 5px; padding-bottom: 5px; font-size: 15px; }
+  .bt-input .seg button { min-height: 30px; }
+  .bt-input .chip, .bt-input .pf-tab { min-height: 30px; font-size: 13px; }
+  .bt-input .stack, .bt-col .cond { gap: 10px; }
+  .bt-input label.field, .bt-input .field { gap: 3px; }
+  .bt-input .pf-tabs { margin-bottom: var(--sp-2); }
+  .bt-input .pf-name { margin-bottom: var(--sp-2); padding: 2px 0; }
+  .bt-input #pfKind { margin-bottom: 10px !important; }
+  .bt-input .col-title { margin-bottom: 6px; }
+  .bt-input .tm-field { margin-top: 10px; }
+}
 .bt-col .cond { display: grid; gap: var(--sp-3); }
 .bt-col .cond .chips { flex-wrap: wrap; }
+.cost-row { display: flex; align-items: flex-end; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; }
+.cost-row > label.field { flex: 0 1 130px; }
+.cost-row > .chip, .cost-row > .toggle { margin-bottom: 4px; }
+.tm-field { margin-top: 12px; }
+.ex-more > summary { cursor: pointer; font-size: var(--fs-label); color: var(--text-2); font-weight: 500; padding: 2px 0; }
+.ex-more[open] > summary { margin-bottom: 6px; }
+.ex-more .chips { margin-bottom: 8px; gap: 6px; }
 
 /* 금액 한글 읽기 */
 .kr-hint { display: block; min-height: 1.2em; margin-top: 4px; font-size: var(--fs-caption); color: var(--accent); font-weight: 600; text-align: right; }
@@ -542,7 +564,7 @@ body.locked { overflow: hidden; }
 .finder-head { margin-bottom: var(--sp-4); }
 .finder-head em { font-style: normal; color: var(--accent); }
 .finder-form { display: grid; gap: var(--sp-4); padding: var(--sp-4); margin-bottom: var(--sp-4); }
-@media (min-width: 1024px) { .finder-form { grid-template-columns: 1fr 1fr 1fr 1.3fr auto; align-items: end; } }
+@media (min-width: 1024px) { .finder-form { grid-template-columns: 1fr 1fr 1.3fr; align-items: end; } }
 .ff { display: grid; gap: 6px; min-width: 0; }
 .ff .lb { font-size: var(--fs-label); font-weight: 700; color: var(--text-2); }
 .ff-big { display: flex; align-items: baseline; gap: 4px; }
@@ -576,7 +598,7 @@ body.locked { overflow: hidden; }
 .rc-stat { margin: 0; font-size: var(--fs-label); color: var(--text-3); }
 .rc-stat b { color: var(--text-1); }
 .rc-now { font-weight: 650; color: var(--text-1); }
-.rc-nums { display: grid; grid-template-columns: repeat(3, auto) minmax(0, 1fr); gap: 16px; align-items: end; }
+.rc-nums { display: grid; grid-template-columns: repeat(4, auto) minmax(0, 1fr); gap: 16px; align-items: end; }
 .rc-spark { min-width: 0; overflow: hidden; }
 @media (max-width: 480px) { .rc-nums { gap: 12px; } .rc-spark { display: none; } }
 .rc-nums .lb { display: block; font-size: 12px; color: var(--text-3); }
@@ -1090,3 +1112,57 @@ a.btn { text-decoration: none; }
 .alt4-plot { display: inline-flex; align-items: center; gap: 6px; }
 .alt4-plot i { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
 .alt4-plot[aria-pressed="true"] { border-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); }
+.money-row { align-items: flex-start; }
+.fx-field { display: grid; gap: 3px; font-size: var(--fs-label); color: var(--text-2); font-weight: 500; }
+@media (min-width: 1024px) { .bt-input #f_preset { gap: 6px; } .bt-input #f_preset .chip { padding: 0 9px; } }
+
+/* ================= 대안 비교(2026-11-21): 결과 맨 위 '지금 vs 대안' 칸, 보유 변화 나란히 ================= */
+.alt-cmp { margin: var(--sp-3) var(--sp-4) var(--sp-4); border: 1px solid var(--border); border-left: 4px solid var(--ca, var(--accent)); border-radius: var(--r-panel); background: var(--bg-sunken); padding: var(--sp-3) var(--sp-4); scroll-margin-top: 80px; animation: acIn .45s ease-out; }
+@keyframes acIn { from { box-shadow: 0 0 0 3px var(--focus-ring); } to { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .alt-cmp { animation: none; } }
+.alt-cmp > header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3); }
+.alt-cmp > header b { font-size: var(--fs-section); font-weight: 720; margin-right: 8px; }
+.alt-cmp > header .cap { display: inline; }
+.ac-diff { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0 2px; }
+.ac-chg { display: inline-flex; padding: 3px 10px; border-radius: var(--r-pill); background: var(--bg-surface); border: 1px solid var(--ca, var(--accent)); font-size: var(--fs-label); font-weight: 650; }
+.ac-body { display: grid; gap: var(--sp-3); margin-top: 10px; }
+@media (min-width: 900px) { .ac-body { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; } }
+.ac-tbl td, .ac-tbl th { padding-top: 6px; padding-bottom: 6px; }
+.ac-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: 0; }
+.ac-picks { display: grid; gap: 6px; }
+.ac-picks-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 2px; }
+.ac-pick-row { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: start; font-size: var(--fs-label); }
+.ac-pick-row > span { color: var(--text-2); padding-top: 4px; white-space: nowrap; }
+.ac-pick-row > span i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.ac-pick-row > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.hc-chip.only { background: var(--bg-selected); border: 1px solid var(--accent); color: var(--text-1); font-weight: 650; }
+.hc-chip.both { opacity: .72; }
+.btn.on { border-color: var(--accent); color: var(--accent); background: var(--bg-selected); }
+.hold-pf button { display: inline-flex; align-items: center; }
+.hp-head, .hp-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+.hp-head { font-size: var(--fs-label); font-weight: 650; color: var(--text-2); padding: 0 0 6px; border-bottom: 1px solid var(--border); }
+.hp-head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hp-list { display: grid; }
+.hp-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.hp-row .hc-date { margin: 4px 0 0; }
+@media (max-width: 640px) {
+  .hp-head { display: none; }
+  .hp-row { grid-template-columns: 1fr; gap: 6px; }
+  .hp-row .hc-body::before { content: attr(data-l); font-size: 12px; font-weight: 700; color: var(--text-3); width: 100%; }
+  .alt-cmp { margin: var(--sp-3) 0; padding: var(--sp-3); }
+  .alt-cmp > header { flex-wrap: wrap; }
+}
+/* 전략 찾기: 연 회전율 한도(2026-11-21) */
+.ff .ff-sub { font-size: 12px; color: var(--text-3); }
+#fTurn button { padding: 0 10px; }
+.rc-steps li b { white-space: nowrap; }
+/* 팩터 설명 한 줄(백테스트 순위 기준) */
+.fx-note { margin: -2px 0 0; font-size: 13px; line-height: 1.55; color: var(--text-2); background: var(--bg-sunken); border-radius: var(--r-ctrl); padding: 8px 10px; }
+.fx-note b { color: var(--text-1); margin-right: 4px; }
+.fx-note .cap { display: block; margin-top: 2px; }
+.alt-cmp .hc-chip { background: var(--bg-surface); }
+.alt-cmp .hc-chip.only { background: var(--bg-selected); }
+#subtabs { scroll-margin-top: 64px; }
+.rc-spark { justify-self: stretch; text-align: right; }
+.rc-spark svg { width: 100%; max-width: 120px; height: auto; }
+@media (min-width: 1024px) { .finder-form { align-items: start; } .finder-form .ff-go { align-self: end; } }

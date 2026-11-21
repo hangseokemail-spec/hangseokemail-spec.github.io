@@ -13,11 +13,12 @@ import { diagnose, evaluateAlt, altStrategy, story, findAlternatives, ALT_GOALS 
 import { todayYm, ymAdd, parseYm, ymToIso, dayToYm } from '../core/dates.js';
 import { aiParse, hasKey } from '../core/ai.js';
 import { FUND_METRICS, isFundMetric } from '../core/fund.js';
+import { FACTORS } from '../core/factors.js';
 
 const REPO = 'hangseokemail-spec/hangseokemail-spec.github.io';
 const GROUPS = { US_STOCK: '미국 대형주', KR_STOCK: '국내 대형주', US_ETF: '미국 ETF', KR_ETF: '국내 ETF' };
 const PRICE_METRICS = { mcap: '시가총액', mom: '모멘텀(수익률)', lowvol: '낮은 변동성' };
-const METRICS = { ...PRICE_METRICS, ...Object.fromEntries(Object.entries(FUND_METRICS).map(([k, v]) => [`f:${k}`, v.short])) };
+const METRICS = { ...PRICE_METRICS, ...Object.fromEntries(Object.entries(FUND_METRICS).map(([k, v]) => [`f:${k}`, v.short])), ...Object.fromEntries(Object.entries(FACTORS).map(([k, v]) => [k, v.short])) };
 const ffText = (r) => (r.ff?.key && FUND_METRICS[r.ff.key] && r.ff.min != null && r.ff.min !== '' ? `(${FUND_METRICS[r.ff.key].short} ${r.ff.min}% 이상만)` : '');
 const REB = { none: '안 함', M: '매월 말', Q: '분기 말', S: '반기 말', A: '매년 말', band: '밴드' };
 const BENCH_PRESETS = [['SPY', 'S&P 500 (SPY)'], ['QQQ', '나스닥100 (QQQ)'], ['069500', '코스피200 (KODEX 200)'], ['VT', '전세계 (VT)'], ['', '비교 안 함']];
@@ -297,7 +298,7 @@ function renderSentence() {
   const pfs = inc.length ? inc.map((x) => x.pf) : st.portfolios;
   const pfPart = (inc.length ? inc : st.portfolios.map((pf, i) => ({ pf, i }))).map(({ pf, i }) => `${st.portfolios.length > 1 ? `<span class="faint">P${i + 1}</span> ` : ''}${slot(pf.kind === 'rank' ? 'rank' : 'assets', pfText(pf), `pf-${i}`)}`).join(pfs.length > 1 ? ' 와 ' : '');
   const pf0 = pfs[0];
-  const weighting = pf0.kind === 'rank' ? ` 종목을 ${slot('weighting', { equal: '같은 비중', mcap: '시총 비중', invvol: '변동성 반비례 비중' }[pf0.rank.weighting])}으로 담고` : '을 담고';
+  const weighting = pf0.kind === 'rank' ? ` 종목을 ${slot('weighting', { equal: '같은 비중', mcap: '시총 비중', invvol: '변동성 반비례 비중', rev: '매출 비례 비중' }[pf0.rank.weighting])}으로 담고` : '을 담고';
   const reb = pfs.length > 1 && new Set(pfs.map((p) => p.rebalance)).size > 1 ? '포트폴리오별로' : rebText(pf0);
   const tmPf = pfs.find((p) => p.timing?.kind);
   const bl = benchList();
@@ -536,16 +537,21 @@ function renderInput() {
   const bl = benchList();
   const cond = `<div class="cond">
         ${periodForm()}
-        <div class="row" style="align-items:flex-end"><label class="field" style="flex:1;min-width:150px">시작 금액<div class="input-unit"><input class="input num" id="c_initial" inputmode="numeric" data-money="${st.currency}" value="${st.initial}"><span>${st.currency === 'KRW' ? '원' : '$'}</span></div></label>
-          <div class="field">기준 통화<div class="seg" id="c_cur"><button type="button" data-v="KRW" aria-pressed="${st.currency === 'KRW'}">원화</button><button type="button" data-v="USD" aria-pressed="${st.currency === 'USD'}">달러</button></div></div></div>
+        <div class="row money-row"><label class="field" style="flex:1;min-width:150px">시작 금액<div class="input-unit"><input class="input num" id="c_initial" inputmode="numeric" data-money="${st.currency}" value="${st.initial}"><span>${st.currency === 'KRW' ? '원' : '$'}</span></div></label>
+          <div class="field fx-field">기준 통화<div class="seg" id="c_cur"><button type="button" data-v="KRW" aria-pressed="${st.currency === 'KRW'}">원화</button><button type="button" data-v="USD" aria-pressed="${st.currency === 'USD'}">달러</button></div></div></div>
         ${flowForm()}
-        <div class="grid2"><label class="toggle"><input type="checkbox" id="c_reinvest" ${st.reinvest !== false ? 'checked' : ''}> 배당 재투자</label>
-          <label class="field">거래비용(편도)<div class="input-unit"><input class="input num" id="c_fee" inputmode="decimal" value="${(st.feeBp || 0) / 100}"><span>%</span></div></label></div>
-        <button class="chip" type="button" id="fee0" style="justify-self:start">비용 0 (포트폴리오 비주얼라이저와 맞추기)</button>
+        <div class="cost-row"><label class="field">거래비용(편도)<div class="input-unit"><input class="input num" id="c_fee" inputmode="decimal" value="${(st.feeBp || 0) / 100}"><span>%</span></div></label>
+          <button class="chip small" type="button" id="fee0" title="포트폴리오 비주얼라이저와 같은 조건(비용 없음)으로 맞춰요">비용 0</button>
+          <label class="toggle"><input type="checkbox" id="c_reinvest" ${st.reinvest !== false ? 'checked' : ''}> 배당 재투자</label></div>
       </div>`;
   const cmp = `<div class="field"><span class="row" style="justify-content:space-between">비교 대상 <span class="cap">${bl.length}/${MAX_COMPARE}</span></span>
       <div class="cmp-sel">${st.portfolios.length > 1 ? st.portfolios.map((p, i) => (p.off ? '' : `<span class="cmp-chip pf"><i style="background:${seriesColor(i)}"></i>P${i + 1}</span>`)).join('') : ''}${bl.map((b, i) => `<span class="cmp-chip"><i style="background:${compareColor(i)}"></i>${esc(benchName(b))}<button type="button" data-rmb="${i}" aria-label="빼기">×</button></span>`).join('')}<button class="chip" type="button" id="addCmp">+ 포트폴리오·지수·종목·지난 실행</button></div></div>`;
-  const tmBox = pf.timing?.kind ? `<div class="tm-chip"><span class="tm-ic" aria-hidden="true">⏱</span><span>${esc(timingText(pf.timing))}</span><button class="btn small ghost" type="button" id="editTm">바꾸기</button><button class="x-btn" type="button" id="rmTm" aria-label="타이밍 끄기">×</button></div>` : `<button class="btn small" type="button" id="editTm">+ 매수·매도 타이밍 / 조건부 리밸런싱</button>`;
+  const rebSec = () => `<section class="${wide ? '' : 'bt-col '}col-reb">
+        <div class="col-title">언제 사고팔까</div>
+        <div class="field"><span class="row" style="justify-content:space-between">리밸런싱 <button class="help" type="button" data-help="band">?</button></span>${rebControls(pf, 'pf')}</div>
+        <div class="field tm-field">타이밍 <button class="help" type="button" data-help="timing">?</button>${tmBox}</div>
+      </section>`;
+  const tmBox = pf.timing?.kind ?`<div class="tm-chip"><span class="tm-ic" aria-hidden="true">⏱</span><span>${esc(timingText(pf.timing))}</span><button class="btn small ghost" type="button" id="editTm">바꾸기</button><button class="x-btn" type="button" id="rmTm" aria-label="타이밍 끄기">×</button></div>` : `<button class="btn small" type="button" id="editTm">+ 매수·매도 타이밍 / 조건부 리밸런싱</button>`;
   box.innerHTML = `
     <div class="bt-grid">
       <section class="bt-col col-pf">
@@ -560,13 +566,11 @@ function renderInput() {
         <div id="pfEditor"></div>
         ${st.portfolios.length > 1 ? '<button class="btn ghost small" type="button" id="rmPf">이 포트폴리오 빼기</button>' : ''}
       </section>
-      <section class="bt-col col-reb">
-        <div class="col-title">언제 사고팔까</div>
-        <div class="field"><span class="row" style="justify-content:space-between">리밸런싱 <button class="help" type="button" data-help="band">?</button></span>${rebControls(pf, 'pf')}</div>
-        <div class="field" style="margin-top:12px">타이밍 <button class="help" type="button" data-help="timing">?</button>${tmBox}</div>
-      </section>
-      ${wide ? `<section class="bt-col col-cond"><div class="col-title">기간과 돈</div>${cond}</section>` : `<details class="more bt-col"><summary>기간·금액·적립·비용</summary>${cond}</details>`}
-      <section class="bt-col col-cmp"><div class="col-title">무엇과 비교할까</div>${cmp}</section>
+      ${wide
+        ? `<div class="bt-col col-side">${rebSec()}<section class="col-cmp"><div class="col-title">무엇과 비교할까</div>${cmp}</section></div>
+           <section class="bt-col col-cond"><div class="col-title">기간과 돈</div>${cond}</section>`
+        : `${rebSec()}<details class="more bt-col"><summary>기간·금액·적립·비용</summary>${cond}</details>
+           <section class="bt-col col-cmp"><div class="col-title">무엇과 비교할까</div>${cmp}</section>`}
     </div>
     <div class="run-bar"><button class="btn primary big" type="button" id="runBtn">백테스트 실행</button><div class="progress" hidden><i></i></div></div>`;
   $('#addCmp', box).onclick = openCompare;
@@ -636,28 +640,35 @@ function mobileCards(box, pf, bl) {
   });
 }
 
+let exOpen = false; // '빼고 고르기' 펼침 상태
 function renderEditor(pf) {
   const box = $('#pfEditor', root);
   if (pf.kind === 'rank') {
     const r = pf.rank;
     const fundOk = r.group === 'US_STOCK' || r.group === 'KR_STOCK';
-    if (!fundOk && isFundMetric(r.metric)) r.metric = 'mcap';
+    if (!fundOk && (isFundMetric(r.metric) || FACTORS[r.metric]?.fund)) r.metric = 'mcap';
     if (!fundOk && r.ff) delete r.ff;
+    if (!fundOk && r.weighting === 'rev') r.weighting = 'equal';
+    const fx = FACTORS[r.metric];
+    const nEx = (r.excludeCats || []).length + (r.exclude || []).length;
     box.innerHTML = `<div class="stack">
       <div class="grid2"><label class="field">고를 곳<select class="input" id="r_group">${Object.entries(GROUPS).map(([k, l]) => `<option value="${k}" ${r.group === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="field">순위 기준<select class="input" id="r_metric"><optgroup label="가격으로">${Object.entries(PRICE_METRICS).map(([k, l]) => `<option value="${k}" ${r.metric === k ? 'selected' : ''}>${l}</option>`).join('')}</optgroup>
-        <optgroup label="실적으로 · 높은 순(${fundOk ? (r.group === 'US_STOCK' ? '미국 공시, 2009년~' : '국내 공시, 2015년~') : 'ETF는 실적 없음'})">${Object.entries(FUND_METRICS).map(([k, v]) => `<option value="f:${k}" ${r.metric === `f:${k}` ? 'selected' : ''} ${fundOk ? '' : 'disabled'}>${v.label}</option>`).join('')}</optgroup></select></label></div>
+        <optgroup label="실적으로 · 높은 순(${fundOk ? (r.group === 'US_STOCK' ? '미국 공시, 2009년~' : '국내 공시, 2015년~') : 'ETF는 실적 없음'})">${Object.entries(FUND_METRICS).map(([k, v]) => `<option value="f:${k}" ${r.metric === `f:${k}` ? 'selected' : ''} ${fundOk ? '' : 'disabled'}>${v.label}</option>`).join('')}</optgroup>
+        <optgroup label="팩터 · 논문에서 시장을 이긴 기준">${Object.entries(FACTORS).map(([k, v]) => `<option value="${k}" ${r.metric === k ? 'selected' : ''} ${v.fund && !fundOk ? 'disabled' : ''}>${v.label}</option>`).join('')}</optgroup></select></label></div>
+      ${fx ? `<p class="fx-note"><b>${esc(fx.short)}</b> ${esc(fx.how)} <span class="cap">근거 ${esc(fx.paper)}${fx.warn ? ` · ${esc(fx.warn)}` : ''}</span></p>` : ''}
       <div class="grid3"><label class="field">몇 위부터<input class="input num" id="r_from" type="number" min="1" value="${r.from || 1}"></label><label class="field">몇 위까지<input class="input num" id="r_top" type="number" min="1" max="30" value="${r.top}"></label>
-      <label class="field">비중<select class="input" id="r_w"><option value="equal" ${r.weighting === 'equal' ? 'selected' : ''}>같게</option><option value="mcap" ${r.weighting === 'mcap' ? 'selected' : ''}>시총 비례</option><option value="invvol" ${r.weighting === 'invvol' ? 'selected' : ''}>변동성 반비례</option></select></label></div>
-      <div class="grid3" ${r.metric === 'mcap' || isFundMetric(r.metric) ? 'hidden' : ''}><label class="field">살펴볼 기간<div class="input-unit"><input class="input num" id="r_lb" type="number" min="2" value="${r.lookback}"><span>개월</span></div></label>
+      <label class="field">비중<select class="input" id="r_w"><option value="equal" ${r.weighting === 'equal' ? 'selected' : ''}>같게</option><option value="mcap" ${r.weighting === 'mcap' ? 'selected' : ''}>시총 비례</option><option value="invvol" ${r.weighting === 'invvol' ? 'selected' : ''}>변동성 반비례</option><option value="rev" ${r.weighting === 'rev' ? 'selected' : ''} ${fundOk ? '' : 'disabled'}>매출 비례</option></select></label></div>
+      <div class="grid3"><label class="field" ${['mom', 'lowvol'].includes(r.metric) ? '' : 'hidden'}>살펴볼 기간<div class="input-unit"><input class="input num" id="r_lb" type="number" min="2" value="${r.lookback}"><span>개월</span></div></label>
         <label class="field" ${r.metric !== 'mom' ? 'hidden' : ''}>최근 제외<div class="input-unit"><input class="input num" id="r_skip" type="number" min="0" value="${r.skip || 0}"><span>개월</span></div></label>
         <label class="field">한 종목 최대<div class="input-unit"><input class="input num" id="r_max" value="${r.maxW || ''}"><span>%</span></div></label></div>
-      <div class="field ff-row" ${fundOk ? '' : 'hidden'}>실적 조건(선택) — 이 조건을 넘는 종목 안에서만 골라요
+      <div class="field ff-row" ${fundOk ? '' : 'hidden'} title="이 조건을 넘는 종목 안에서만 골라요. 실적은 공시한 날 뒤부터만 써요.">실적 조건(선택)
         <div class="ff-inputs"><select class="input" id="r_ffk"><option value="">조건 없음</option>${Object.entries(FUND_METRICS).map(([k, v]) => `<option value="${k}" ${r.ff?.key === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select>
         <div class="input-unit"><input class="input num" id="r_ffm" inputmode="decimal" value="${r.ff?.min ?? ''}" placeholder="예: 20" ${r.ff?.key ? '' : 'disabled'}><span>% 이상</span></div></div></div>
-      <div class="field">빼고 고를 종류<div class="chips" id="r_cats">${Object.entries(CAT_LABEL).map(([k, l]) => `<button class="chip" type="button" data-cat="${k}" aria-pressed="${(r.excludeCats || []).includes(k)}">${l} 빼기</button>`).join('')}</div></div>
-      <label class="field">빼고 고를 종목(티커·코드, 쉼표로)<input class="input" id="r_ex" value="${esc((r.exclude || []).join(', '))}" placeholder="예: NVDA, TSLA"></label>
-      <p class="cap">리밸런싱 때마다 그 시점에 알 수 있던 정보로만 다시 골라요. 실적은 회사가 공시한 날 뒤부터만 써요(미국 SEC 2009년~, 국내 금감원 DART 2015년~). 후보는 지금 수집 목록에 있는 종목이라 과거에 사라진 종목은 빠져 있어요(생존 편향).</p></div>`;
+      <details class="ex-more" ${exOpen || nEx ? 'open' : ''}><summary>빼고 고르기${nEx ? ` <span class="cap">${nEx}개 빼는 중</span>` : ''}</summary>
+        <div class="chips" id="r_cats">${Object.entries(CAT_LABEL).map(([k, l]) => `<button class="chip small" type="button" data-cat="${k}" aria-pressed="${(r.excludeCats || []).includes(k)}">${l} 빼기</button>`).join('')}</div>
+        <input class="input" id="r_ex" value="${esc((r.exclude || []).join(', '))}" placeholder="뺄 종목(티커·코드, 쉼표로) 예: NVDA, TSLA" aria-label="빼고 고를 종목"></details></div>`;
+    $('.ex-more', box).addEventListener('toggle', (e) => { exOpen = e.target.open; });
     const upd = () => {
       Object.assign(r, { group: $('#r_group', box).value, metric: $('#r_metric', box).value, from: +$('#r_from', box).value || 1, top: Math.max(+$('#r_top', box).value || 3, +$('#r_from', box).value || 1), weighting: $('#r_w', box).value, lookback: +$('#r_lb', box)?.value || 12, skip: +$('#r_skip', box)?.value || 0, maxW: +$('#r_max', box)?.value || null, exclude: $('#r_ex', box).value.split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean) });
       const fk = $('#r_ffk', box)?.value, fm = $('#r_ffm', box)?.value.trim();
@@ -859,6 +870,7 @@ function renderResults() {
   R.innerHTML = `
     ${historyStrip()}
     <div class="result-head"><p class="result-title">${esc($('#sentence', root)?.innerText || '')}</p>${notes.length ? `<ul class="notes">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</div>
+    ${altCmpHtml()}
     <div class="kpis">
       ${kpi('연환산 수익률(CAGR)', 'cagr', pa(m0.cagr), bench ? `${esc(shortBench(bench.key))} ${fmtPct(bench.m.cagr)}` : fmtSpan(m0.months), more((m) => fmtPct(m.cagr)))}
       ${kpi('최종 금액', 'final', money(m0.final), `${finalRead ? `<span class="kr-read">${esc(finalRead)}</span><br>` : ''}누적 ${pa(m0.totalReturn)}`, more((m) => fmtMoneyShort(m.final, last.st.currency)))}
@@ -889,10 +901,14 @@ function renderResults() {
   $('#csv', R).onclick = () => exportCsv();
   $('#share', R).onclick = async () => { const url = shareLink(); try { await navigator.clipboard.writeText(url); toast('조건이 담긴 링크를 복사했어요(보유 자산은 담기지 않아요).'); } catch { prompt('이 링크를 복사하세요', url); } };
   wireHistory(R);
+  wireAltCmp(R);
   renderDiagnosis();
   $('#growthTbl', R).onclick = (e) => { const t = $('#growthTable', R); t.hidden = !t.hidden; e.target.textContent = t.hidden ? '표로 보기' : '차트만 보기'; if (!t.hidden) t.innerHTML = growthTable(); };
   const hasRank = runs.some((r) => r.res.rankHistory || r.res.timing?.events?.length);
   const tabs = [...(hasRank ? [['holdings', '보유 변화']] : []), ['annual', '연도별'], ['monthly', '월별'], ['dd', '낙폭'], ['rolling', '롤링'], ['mc', '앞으로(몬테카를로)'], ['assets', '자산'], ['metrics', '지표'], ['data', '데이터와 가정']];
+  // 대안 비교를 막 눌렀으면 보유 변화를 '나란히'로 열어 둠
+  const pr = altPair();
+  if (altCmp?.fresh) { altCmp.fresh = false; if (pr && pr.a.res.rankHistory?.length && pr.b.res.rankHistory?.length) { subtab = 'holdings'; holdSel = 'pair'; } else if (pr && hasRank) { subtab = 'holdings'; holdSel = pr.a.i; } }
   if (!tabs.some((t) => t[0] === subtab) || (hasRank && subtab === 'annual' && !last._visited)) subtab = tabs[0][0];
   last._visited = true;
   $('#subtabs', R).innerHTML = tabs.map(([k, l]) => `<button role="tab" type="button" data-k="${k}" aria-selected="${k === subtab}">${l}</button>`).join('');
@@ -1042,16 +1058,54 @@ function renderSub() {
     $$('[data-help]', P).forEach((b) => { b.onclick = () => helpPop(b, b.dataset.help); });
   }
 }
-/** 보유 변화: 한눈 지도(종목 × 시점) / 카드 */
+/** 보유 변화: 한눈 지도(종목 × 시점) / 카드 / 두 포트폴리오 나란히 */
 let holdView = 'map';
+let holdSel = null; // 보는 포트폴리오 번호(r.i) 또는 'pair'
 function renderHoldings(P) {
-  const r = last.runs.find((x) => x.res.rankHistory || x.res.timing?.events?.length);
-  const map = holdMap(r);
-  if (!map) { renderHoldingsCards(P); return; }
-  P.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px"><div class="seg" id="holdView"><button type="button" data-v="map" aria-pressed="${holdView === 'map'}">한눈 지도</button><button type="button" data-v="cards" aria-pressed="${holdView === 'cards'}">카드</button></div></div><div id="holdBody"></div>`;
+  const hr = last.runs.filter((x) => x.res.rankHistory || x.res.timing?.events?.length);
+  const rk = hr.filter((x) => x.res.rankHistory?.length);
+  const pairOk = rk.length >= 2;
+  if (holdSel === 'pair' && !pairOk) holdSel = null;
+  if (holdSel !== 'pair' && !hr.some((x) => x.i === holdSel)) holdSel = hr[0].i;
+  const r = holdSel === 'pair' ? null : hr.find((x) => x.i === holdSel);
+  const map = r ? holdMap(r) : null;
+  const nm = (x) => (x.strat.name.length > 16 ? `${x.strat.name.slice(0, 15)}…` : x.strat.name);
+  const pick = hr.length > 1 ? `<div class="seg hold-pf" id="holdPf">${hr.map((x) => `<button type="button" data-p="${x.i}" aria-pressed="${holdSel === x.i}" title="${esc(x.strat.name)}"><i class="ac-dot" style="background:${seriesColor(x.i)}"></i>P${x.i + 1} ${esc(nm(x))}</button>`).join('')}${pairOk ? `<button type="button" data-p="pair" aria-pressed="${holdSel === 'pair'}">나란히 비교</button>` : ''}</div>` : '<span></span>';
+  const viewSeg = r && map ? `<div class="seg" id="holdView"><button type="button" data-v="map" aria-pressed="${holdView === 'map'}">한눈 지도</button><button type="button" data-v="cards" aria-pressed="${holdView === 'cards'}">카드</button></div>` : '';
+  P.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px">${pick}${viewSeg}</div><div id="holdBody"></div>`;
   const body = $('#holdBody', P);
-  const draw = () => { if (holdView === 'map') body.innerHTML = map; else renderHoldingsCards(body); };
+  const draw = () => {
+    if (holdSel === 'pair') { const b = rk.find((x) => x === last.runs[0]) || rk[0]; const a = rk.find((x) => x !== b && x.i === altCmp?.idx) || rk.find((x) => x !== b); renderHoldPair(body, b, a); }
+    else if (map && holdView === 'map') body.innerHTML = map;
+    else renderHoldingsCards(body, r);
+  };
   $$('#holdView button', P).forEach((b) => { b.onclick = () => { holdView = b.dataset.v; $$('#holdView button', P).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); draw(); }; });
+  $$('#holdPf button', P).forEach((b) => { b.onclick = () => { holdSel = b.dataset.p === 'pair' ? 'pair' : +b.dataset.p; renderHoldings(P); }; });
+  draw();
+}
+/** 두 순위 전략이 달마다 무엇을 골랐는지 나란히: 둘 다 고른 종목은 옅게, 한쪽만 고른 종목은 강조 */
+function renderHoldPair(P, b, a) {
+  const hb = new Map(b.res.rankHistory.map((x) => [x.ym, x.picks])), ha = new Map(a.res.rankHistory.map((x) => [x.ym, x.picks]));
+  const yms = [...new Set([...hb.keys(), ...ha.keys()])].sort((x, y) => y - x);
+  const keyset = (pk) => new Set((pk || []).map((x) => x.key));
+  // 겹치는 정도: 같은 달 둘 다 고른 종목 수 ÷ 둘 중 하나라도 고른 종목 수
+  let ov = 0, nOv = 0;
+  for (const ym of yms) { const sb = keyset(hb.get(ym)), sa = keyset(ha.get(ym)); if (!sb.size || !sa.size) continue; const both = [...sb].filter((k) => sa.has(k)).length; ov += both / new Set([...sb, ...sa]).size; nOv++; }
+  let showSame = false, limit = 24;
+  const prevOf = (h, ym) => { const ks = [...h.keys()].filter((y) => y < ym); return ks.length ? h.get(Math.max(...ks)) : null; };
+  const changed = (h, ym) => { const cur = keyset(h.get(ym)), prev = keyset(prevOf(h, ym)); if (!h.has(ym)) return false; if (!prev.size) return true; return cur.size !== prev.size || [...cur].some((k) => !prev.has(k)); };
+  const draw = () => {
+    const list = yms.filter((ym) => showSame || changed(hb, ym) || changed(ha, ym));
+    const chips = (pk, other) => (pk ? pk.map((x) => `<span class="hc-chip${other.has(x.key) ? ' both' : ' only'}">${esc(label(x.key))}<small>${fmtPct(x.w, 0)}</small></span>`).join('') : '<span class="cap">이 달은 다시 고르지 않음</span>');
+    P.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:10px;align-items:flex-start"><div><div class="section-title" style="margin:0">같은 달에 무엇을 골랐나</div>
+        <p class="cap" style="margin:4px 0 0">기간 전체로 보면 고른 종목의 평균 ${nOv ? fmtPct(ov / nOv, 0) : '–'}가 겹쳐요. 진한 칩은 한쪽만 고른 종목이에요.</p></div>
+        <label class="toggle"><input type="checkbox" id="hpSame" ${showSame ? 'checked' : ''}> 둘 다 그대로인 달도</label></div>
+      <div class="hp-head"><span></span><span><i class="ac-dot" style="background:${seriesColor(b.i)}"></i>P${b.i + 1} ${esc(b.strat.name)}</span><span><i class="ac-dot" style="background:${seriesColor(a.i)}"></i>P${a.i + 1} ${esc(a.strat.name)}</span></div>
+      <div class="hp-list">${list.slice(0, limit).map((ym) => { const pb = hb.get(ym), pa2 = ha.get(ym); return `<div class="hp-row"><div class="hc-date">${fmtYm(ym)}</div><div class="hc-body" data-l="P${b.i + 1}">${chips(pb, keyset(pa2))}</div><div class="hc-body" data-l="P${a.i + 1}">${chips(pa2, keyset(pb))}</div></div>`; }).join('')}</div>
+      ${list.length > limit ? `<button class="btn small" type="button" id="hpMore">이전 ${Math.min(24, list.length - limit)}개 더 보기</button>` : ''}`;
+    $('#hpSame', P).onchange = (e) => { showSame = e.target.checked; draw(); };
+    $('#hpMore', P)?.addEventListener('click', () => { limit += 24; draw(); });
+  };
   draw();
 }
 /** 종목 × 시점 지도: 칸 진하기 = 비중, 테두리 = 새로 들어온 달, 맨 아래 줄 = 피신처 */
@@ -1139,8 +1193,7 @@ function renderMonteCarlo(P) {
 }
 
 /** 보유 변화 카드: 다시 고른 시점마다 카드 한 장, 새로 들어온 종목은 강조, 빠진 종목은 줄 긋기, 타이밍 매매도 같은 줄에 */
-function renderHoldingsCards(P) {
-  const r = last.runs.find((x) => x.res.rankHistory || x.res.timing?.events?.length);
+function renderHoldingsCards(P, r = last.runs.find((x) => x.res.rankHistory || x.res.timing?.events?.length)) {
   const res = r.res;
   const cards = [];
   const h = res.rankHistory || [];
@@ -1264,7 +1317,10 @@ async function renderDiagnosis() {
     }).join('')}</div>
     <p class="cap">같은 과거 기간에 맞춰 고른 대안이라 미래에도 같은 효과를 보장하지는 않아요. 낮추기 대안은 수익률이 지금의 75% 아래로 떨어지지 않는 것, 수익률 대안은 낙폭이 5%p 넘게 깊어지지 않는 것 중에서 골랐어요.</p>`;
   $$('[data-plot]', A).forEach((b) => { b.onclick = () => toggleAltPlot(b.dataset.plot, out.picks[b.dataset.plot], css(G_COLOR[b.dataset.plot])); });
-  $$('[data-cmp]', A).forEach((b) => { b.onclick = () => { const p = out.picks[b.dataset.cmp]; addAltPortfolio(p.strat, p.label); }; });
+  $$('[data-cmp]', A).forEach((b) => { b.onclick = () => { const p = out.picks[b.dataset.cmp]; addAltPortfolio(p.strat, p.label, { goal: b.dataset.cmp, detail: altDetail(p), btn: b }); }; });
+  // 지금 비교 중인 대안 카드 표시
+  const pr = altPair();
+  if (pr && altCmp.goal) { const b = $(`[data-cmp="${altCmp.goal}"]`, A); if (b) { b.textContent = `P${pr.a.i + 1}로 비교 중 · 위에서 보기 ↑`; b.classList.add('on'); b.onclick = () => $('#altCmp', root)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }
   altPicks = out.picks; altColors = G_COLOR;
 }
 let altPicks = {}, altColors = {};
@@ -1293,13 +1349,108 @@ function dumbbell(rows) {
     return `<span class="lb">${n}</span><span class="vals"><span>${fmtPct(a)}</span><span class="track"><i class="ln" style="left:${Math.min(pos(a), pos(b))}%;width:${Math.abs(pos(a) - pos(b))}%"></i><i class="a" style="left:${pos(a)}%"></i><i class="b" style="left:${pos(b)}%"></i></span><b>${fmtPct(b)}</b></span>`;
   }).join('')}</div>`;
 }
-function addAltPortfolio(strat, name) {
-  const p = newPortfolio(name.slice(0, 24));
-  Object.assign(p, { kind: strat.kind, assets: strat.assets || [], rank: strat.rank || p.rank, rebalance: strat.rebalance, band: strat.band || p.band });
-  if (st.portfolios.length >= 3) st.portfolios[2] = p; else st.portfolios.push(p);
-  active = st.portfolios.length - 1;
+/**
+ * 대안을 새 포트폴리오로 넣고 지금 전략과 같은 기간으로 다시 계산한 뒤, 결과 맨 위 '지금 vs 대안' 칸으로 이동.
+ * 타이밍(하락장 쉬기)·밴드·리밸런싱 달까지 그대로 옮긴다(예전에는 타이밍이 빠져 지금 전략과 같게 나왔음).
+ */
+let altCmp = null; // {idx, name, goal, label, detail, fresh}
+async function addAltPortfolio(strat, label, meta = {}) {
+  const goal = ALT_GOALS.find((x) => x.id === meta.goal);
+  const name = `대안${goal ? `·${goal.short}` : ''}: ${label}`.slice(0, 26);
+  const p = newPortfolio(name);
+  Object.assign(p, {
+    kind: strat.kind, assets: structuredClone(strat.assets || []), rank: structuredClone(strat.rank || p.rank), rebalance: strat.rebalance,
+    band: structuredClone(strat.band || p.band), rebMonth: strat.rebMonth, timing: strat.timing?.kind ? structuredClone(strat.timing) : null,
+  });
+  const baseI = last?.runs?.[0]?.i ?? 0;
+  let idx = st.portfolios.findIndex((x, i) => i !== baseI && x.name === name);
+  if (idx < 0 && st.portfolios.length < 3) { st.portfolios.push(p); idx = st.portfolios.length - 1; }
+  else { if (idx < 0) idx = [2, 1, 0].find((i) => i !== baseI); st.portfolios[idx] = p; }
+  active = idx;
   if (strat.feeBp != null) st.feeBp = strat.feeBp;
-  save(); renderSentence(); renderInput(); run();
+  altCmp = { idx, name, goal: meta.goal || null, label, detail: meta.detail || '', fresh: true };
+  if (meta.btn) { meta.btn.disabled = true; meta.btn.textContent = '비교 계산 중…'; }
+  toast(`대안을 P${idx + 1}로 넣어 지금 전략과 같은 기간으로 계산해요`);
+  save(); renderSentence(); renderInput();
+  await run();
+  $('#altCmp', root)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+const W_LABEL = { equal: '같은 비중', mcap: '시총 비례', invvol: '변동성 반비례', rev: '매출 비례' };
+const rebWord = (s) => (s.rebalance === 'band' ? `밴드 ${s.band?.abs ?? 5}%p` : (REB[s.rebalance] || s.rebalance));
+/** 두 전략에서 바뀐 점을 한 줄씩: '종목 수 5개 → 3개' */
+function stratDiff(a, b) {
+  const out = [];
+  if (a.kind !== b.kind) out.push(`${a.kind === 'rank' ? '규칙으로 고르기' : '직접 고르기'} → ${b.kind === 'rank' ? '규칙으로 고르기' : '직접 고르기'}`);
+  if (a.kind === 'rank' && b.kind === 'rank') {
+    const ra = a.rank, rb = b.rank, n = (r) => r.top - (r.from || 1) + 1;
+    if (n(ra) !== n(rb)) out.push(`종목 수 ${n(ra)}개 → ${n(rb)}개`);
+    else if ((ra.from || 1) !== (rb.from || 1)) out.push(`순위 ${ra.from || 1}~${ra.top}위 → ${rb.from || 1}~${rb.top}위`);
+    if (ra.metric !== rb.metric || (ra.metric === 'mom' && (ra.lookback !== rb.lookback || (ra.skip || 0) !== (rb.skip || 0)))) out.push(`순위 기준 ${METRICS[ra.metric] || ra.metric} → ${METRICS[rb.metric] || rb.metric}`);
+    if (ra.weighting !== rb.weighting) out.push(`비중 ${W_LABEL[ra.weighting] || ra.weighting} → ${W_LABEL[rb.weighting] || rb.weighting}`);
+    if ((ra.maxW || null) !== (rb.maxW || null)) out.push(`한 종목 최대 ${ra.maxW ? `${ra.maxW}%` : '없음'} → ${rb.maxW ? `${rb.maxW}%` : '없음'}`);
+    if (ra.group !== rb.group) out.push(`고를 곳 ${GROUPS[ra.group]} → ${GROUPS[rb.group]}`);
+  }
+  if (a.kind === 'static' && b.kind === 'static') {
+    const tot = (s) => s.assets.reduce((t, x) => t + +x.w, 0) || 1;
+    const wa = new Map(a.assets.map((x) => [x.key, (+x.w / tot(a)) * 100])), wb = new Map(b.assets.map((x) => [x.key, (+x.w / tot(b)) * 100]));
+    for (const k of new Set([...wa.keys(), ...wb.keys()])) { const x = wa.get(k) || 0, y = wb.get(k) || 0; if (Math.abs(x - y) >= 0.5) out.push(`${short(k)} ${Math.round(x)}% → ${Math.round(y)}%`); }
+  }
+  if (rebWord(a) !== rebWord(b)) out.push(`리밸런싱 ${rebWord(a)} → ${rebWord(b)}`);
+  const ta = a.timing?.kind ? timingText(a.timing) : '없음', tb = b.timing?.kind ? timingText(b.timing) : '없음';
+  if (ta !== tb) out.push(`타이밍 ${ta} → ${tb}`);
+  return out;
+}
+/** 대안 비교 중인지(대안 포트폴리오가 아직 그대로 있고 이번 결과에 들어 있을 때만) */
+function altPair() {
+  if (!altCmp || !last) return null;
+  const p = last.st.portfolios[altCmp.idx];
+  const b = last.runs[0], a = last.runs.find((x) => x.i === altCmp.idx);
+  if (!p || p.name !== altCmp.name || !a || a === b) return null;
+  return { b, a };
+}
+/** 결과 맨 위 '지금 전략 vs 대안' 칸 */
+function altCmpHtml() {
+  const pr = altPair();
+  if (!pr) return '';
+  const { b, a } = pr;
+  const goal = ALT_GOALS.find((x) => x.id === altCmp.goal);
+  const pp = (d) => `${d >= 0 ? '+' : '−'}${(Math.abs(d) * 100).toFixed(1)}%p`;
+  const rows = [
+    ['연환산 수익률', (m) => fmtPct(m.cagr), (x, y) => y.cagr - x.cagr, (d) => d > 0, pp],
+    ['최종 금액', (m) => money(m.final), (x, y) => y.final / x.final - 1, (d) => d > 0, (d) => `${d >= 0 ? '+' : '−'}${fmtPct(Math.abs(d))}`],
+    ['최대 낙폭', (m) => fmtPct(m.mdd), (x, y) => y.mdd - x.mdd, (d) => d > 0, pp],
+    ['변동성', (m) => fmtPct(m.vol), (x, y) => y.vol - x.vol, (d) => d < 0, pp],
+    ['샤프 지수', (m) => fmtNum(m.sharpe), (x, y) => y.sharpe - x.sharpe, (d) => d > 0, (d) => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}`],
+  ];
+  const diff = stratDiff(b.strat, a.strat);
+  let picks = '';
+  const hb = b.res.rankHistory, ha = a.res.rankHistory;
+  if (hb?.length && ha?.length) {
+    const ymA = new Set(ha.map((x) => x.ym));
+    const lastB = [...hb].reverse().find((x) => ymA.has(x.ym)) || hb.at(-1);
+    const lastA = ha.find((x) => x.ym === lastB.ym) || ha.at(-1);
+    const sb = new Set(lastB.picks.map((x) => x.key)), sa = new Set(lastA.picks.map((x) => x.key));
+    const both = [...sb].filter((k) => sa.has(k)), onlyB = [...sb].filter((k) => !sa.has(k)), onlyA = [...sa].filter((k) => !sb.has(k));
+    const list = (ks, cls) => (ks.length ? ks.map((k) => `<span class="hc-chip ${cls}">${esc(label(k))}</span>`).join('') : '<span class="cap">없음</span>');
+    picks = `<div class="ac-picks"><div class="ac-picks-h"><b>${fmtYm(lastB.ym)} 말에 고른 종목</b><button class="btn small" type="button" id="acHold">달마다 나란히 보기 ↓</button></div>
+      <div class="ac-pick-row"><span>둘 다</span><div>${list(both, '')}</div></div>
+      <div class="ac-pick-row"><span><i style="background:${seriesColor(b.i)}"></i>지금만</span><div>${list(onlyB, 'only')}</div></div>
+      <div class="ac-pick-row"><span><i style="background:${seriesColor(a.i)}"></i>대안만</span><div>${list(onlyA, 'only')}</div></div></div>`;
+  } else if (b.res.timing || a.res.timing) {
+    const n = (r) => (r.res.timing ? `${r.res.timing.nSell}번 쉬었다 돌아옴 · 투자 비율 ${fmtPct(r.res.timing.inRatio, 0)}` : '쉬지 않고 계속 투자');
+    picks = `<div class="ac-picks"><div class="ac-pick-row"><span><i style="background:${seriesColor(b.i)}"></i>지금</span><div class="cap">${n(b)}</div></div><div class="ac-pick-row"><span><i style="background:${seriesColor(a.i)}"></i>대안</span><div class="cap">${n(a)}</div></div></div>`;
+  }
+  return `<section class="alt-cmp" id="altCmp" style="--ca:${seriesColor(a.i)}">
+    <header><div><b>지금 전략과 대안 비교</b><span class="cap">${goal ? `‘${goal.label}’ 대안을 ` : '대안을 '}P${a.i + 1}로 넣어 같은 기간(${fmtYm(a.m.start)}~${fmtYm(a.m.end)})으로 계산했어요</span></div>
+      <button class="btn small ghost" type="button" id="acEnd">비교 끝내기</button></header>
+    ${diff.length ? `<div class="ac-diff"><span class="cap">바뀐 점</span>${diff.map((d) => `<span class="ac-chg">${esc(d)}</span>`).join('')}</div>` : ''}
+    <div class="ac-body"><div class="tbl-wrap"><table class="tbl ac-tbl"><thead><tr><th></th><th class="num"><i class="ac-dot" style="background:${seriesColor(b.i)}"></i>지금 · P${b.i + 1}</th><th class="num"><i class="ac-dot" style="background:${seriesColor(a.i)}"></i>대안 · P${a.i + 1}</th><th class="num">차이</th></tr></thead><tbody>
+      ${rows.map(([n, f, d, good, fmt]) => { const v = d(b.m, a.m); const tone = Math.abs(v) < 1e-9 ? '' : good(v) ? 't-good' : 't-bad'; return `<tr><td>${n}</td><td class="num">${f(b.m)}</td><td class="num"><b>${f(a.m)}</b></td><td class="num ${tone}">${fmt(v)}</td></tr>`; }).join('')}</tbody></table></div>
+    ${picks}</div></section>`;
+}
+function wireAltCmp(R) {
+  $('#acEnd', R)?.addEventListener('click', () => { const i = altCmp?.idx; altCmp = null; if (i != null && st.portfolios[i] && st.portfolios.length > 1) st.portfolios.splice(i, 1); active = 0; save(); renderSentence(); renderInput(); run(); });
+  $('#acHold', R)?.addEventListener('click', () => { holdSel = 'pair'; subtab = 'holdings'; $$('#subtabs button', R).forEach((x) => x.setAttribute('aria-selected', String(x.dataset.k === 'holdings'))); renderSub(); $('#subtabs', R)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 }
 
 function sendToPlan() {

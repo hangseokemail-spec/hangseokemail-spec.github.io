@@ -29,12 +29,16 @@ export function quarterMetrics(q) {
     const p = i > 0 && gap(q[i - 1][0], end) >= 75 && gap(q[i - 1][0], end) <= 105 ? q[i - 1] : null;
     let y = null;
     for (let j = i - 1; j >= Math.max(0, i - 6); j--) { const g = gap(q[j][0], end); if (g >= 350 && g <= 380) { y = q[j]; break; } }
-    let opm = null, npm = null;
+    let opm = null, npm = null, rev4 = null, ni4 = null;
     if (i >= 3) {
       let ok = true;
       for (let j = i - 2; j <= i; j++) { const g = gap(q[j - 1][0], q[j][0]); if (g < 75 || g > 105) ok = false; }
       const four = q.slice(i - 3, i + 1);
       const sr = four.reduce((t, r) => (r[2] == null ? NaN : t + r[2]), 0);
+      // 최근 4분기 합(이익수익률·매출수익률·매출 비례 비중에 씀)
+      const sn4 = four.reduce((t, r) => (r[4] == null ? NaN : t + r[4]), 0);
+      if (ok && isFinite(sr) && sr > 0) rev4 = sr;
+      if (ok && isFinite(sn4)) ni4 = sn4;
       if (ok && sr > 0) {
         const so = four.reduce((t, r) => (r[3] == null ? NaN : t + r[3]), 0);
         const sn = four.reduce((t, r) => (r[4] == null ? NaN : t + r[4]), 0);
@@ -48,7 +52,7 @@ export function quarterMetrics(q) {
       oi_yoy: growth(oi, y?.[3]), oi_qoq: growth(oi, p?.[3]),
       ni_yoy: growth(ni, y?.[4]), ni_qoq: growth(ni, p?.[4]),
       eps_yoy: growth(eps, y?.[5]), eps_qoq: growth(eps, p?.[5]),
-      opm, npm,
+      opm, npm, rev4, ni4,
     });
   }
   return out;

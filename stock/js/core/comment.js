@@ -177,6 +177,11 @@ export function altCandidates(run) {
     for (const w of ['equal', 'invvol', 'mcap']) if (w !== r.weighting) add(`rk-w-${w}`, `비중을 ${{ equal: '똑같이', invvol: '변동성 반비례로', mcap: '시가총액 비례로' }[w]}`, 'strat', { strat: { ...st, rank: { ...r, weighting: w } } });
     for (const f of ['M', 'Q', 'A']) if (f !== st.rebalance) add(`rk-reb-${f}`, `종목 바꾸기 ${REB_NAME[st.rebalance] || st.rebalance} → ${REB_NAME[f]}`, 'strat', { strat: { ...st, rebalance: f } });
     for (const [m, l] of [['mcap', '시가총액'], ['mom', '12개월 모멘텀'], ['lowvol', '낮은 변동성']]) if (m !== r.metric) add(`rk-m-${m}`, `순위 기준을 ${l}로`, 'strat', { strat: { ...st, rank: { ...r, metric: m, lookback: 12, skip: 0 } } });
+    // 팩터(논문 기준): 가격 팩터는 늘, 실적이 필요한 복합 팩터는 실적이 있는 기간(미국 2011년~, 국내 2017년~)일 때만 같은 기간으로 비교할 수 있음
+    if (r.group.endsWith('STOCK')) {
+      const fundOk = (run.res.startYm || 0) >= (mkt === 'KR' ? 201701 : 201101);
+      for (const [m, l] of [['x:rmom', '위험 조정 모멘텀'], ['x:lowbeta', '낮은 베타'], ...(fundOk ? [['x:vm', '가치+모멘텀'], ['x:multi4', '네 팩터 평균']] : [])]) if (m !== r.metric) add(`rk-m-${m}`, `순위 기준을 ${l}(팩터)로`, 'strat', { strat: { ...st, rank: { ...r, metric: m } } });
+    }
     if (!st.timing?.kind) for (const n of TM_MONTHS) add(`tm-ma${n}`, tmLabel(mkt, n), 'strat', { strat: { ...st, timing: tmRule(mkt, n) } });
     for (const [k, nm2] of [...ETF_SETS[mkt].def.slice(0, 3), ...ETF_SETS[mkt].grow.slice(0, 1)]) if (okFrom(k)) for (const pct of [20, 40]) add(`bl-${k}-${pct}`, `${nm2}(${k}) ${pct}% 함께 들고 가기`, 'blend', { key: k, pct });
   }

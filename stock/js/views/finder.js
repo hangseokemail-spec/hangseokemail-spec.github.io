@@ -6,7 +6,8 @@ import { findStrategies, candSentence, candRule, candToBacktest } from '../core/
 import { loadUniverse } from '../core/data.js';
 
 let root = null, last = null, busy = false, picked = null;
-const DEF = { targetCagr: 10, maxMdd: 20, years: 15, market: 'US', allowLev: false };
+const DEF = { targetCagr: 10, maxMdd: 20, years: 15, market: 'US', allowLev: false, maxTurnover: 0 };
+const TURN_OPTS = [[0, '제한 없음'], [200, '200%'], [100, '100%'], [50, '50%'], [20, '20%']];
 
 export function initFinder(container) {
   root = container;
@@ -28,6 +29,7 @@ function render(opt) {
     <form class="surface finder-form" id="fForm">
       <label class="ff"><span class="lb">목표 연수익률</span><span class="ff-big"><input class="input num" id="fTarget" inputmode="decimal" value="${opt.targetCagr}"><b>%</b></span><input type="range" min="3" max="25" step="0.5" value="${opt.targetCagr}" id="fTargetR" aria-label="목표 연수익률"></label>
       <label class="ff"><span class="lb">견딜 수 있는 최대 낙폭</span><span class="ff-big"><b>−</b><input class="input num" id="fMdd" inputmode="decimal" value="${opt.maxMdd}"><b>%</b></span><input type="range" min="5" max="60" step="1" value="${opt.maxMdd}" id="fMddR" aria-label="최대 낙폭"></label>
+      <div class="ff"><span class="lb">연 회전율 한도 <button class="help" type="button" id="fTurnHelp" aria-label="연 회전율이란">?</button></span><div class="seg" id="fTurn">${TURN_OPTS.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${(+opt.maxTurnover || 0) === v}">${l}</button>`).join('')}</div><span class="cap ff-sub">${turnHint(+opt.maxTurnover || 0)}</span></div>
       <div class="ff"><span class="lb">시험 기간</span><div class="seg" id="fYears">${[5, 10, 15, 20, 30].map((y) => `<button type="button" data-v="${y}" aria-pressed="${opt.years === y}">${y}년</button>`).join('')}</div></div>
       <div class="ff"><span class="lb">시장</span><div class="seg" id="fMkt">${[['US', '미국'], ['KR', '국내'], ['ALL', '둘 다(원화)']].map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${opt.market === v}">${l}</button>`).join('')}</div><label class="toggle"><input type="checkbox" id="fLev" ${opt.allowLev ? 'checked' : ''}> 레버리지 ETF도 후보에</label></div>
       <div class="ff ff-go"><button class="btn primary big" type="submit" id="fGo">규칙 찾기</button><div class="progress" hidden><i></i></div><span class="cap" id="fProg"></span></div>
@@ -35,7 +37,8 @@ function render(opt) {
     <div id="fResult">${emptyHtml()}</div>`;
   const sync = (a, b) => { $(a, root).addEventListener('input', () => { $(b, root).value = $(a, root).value; }); };
   sync('#fTarget', '#fTargetR'); sync('#fTargetR', '#fTarget'); sync('#fMdd', '#fMddR'); sync('#fMddR', '#fMdd');
-  $$('.seg button', root).forEach((b) => { b.onclick = () => $$('button', b.parentElement).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
+  $$('.seg button', root).forEach((b) => { b.onclick = () => { $$('button', b.parentElement).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); if (b.parentElement.id === 'fTurn') $('#fTurn + .ff-sub', root).textContent = turnHint(+b.dataset.v); }; });
+  $('#fTurnHelp', root).onclick = (e) => { e.preventDefault(); toast('연 회전율 = 1년 동안 사고판 금액 ÷ 평가액(한쪽 기준). 100%면 1년에 포트폴리오 전체를 한 번 갈아 끼우는 정도예요. 낮을수록 손댈 일·거래비용·세금이 적어요.'); };
   $('#fForm', root).onsubmit = (e) => { e.preventDefault(); go(readOpt()); };
   $$('[data-ex]', root).forEach((b) => { b.onclick = () => { const [t, m] = b.dataset.ex.split(','); $('#fTarget', root).value = t; $('#fTargetR', root).value = t; $('#fMdd', root).value = m; $('#fMddR', root).value = m; go(readOpt()); }; });
 }
@@ -46,8 +49,12 @@ function emptyHtml() {
 function readOpt() {
   const v = (id) => +$(id, root).value;
   const p = (id) => $(`${id} button[aria-pressed="true"]`, root)?.dataset.v;
-  return { targetCagr: v('#fTarget') || 10, maxMdd: Math.abs(v('#fMdd')) || 20, years: +p('#fYears') || 15, market: p('#fMkt') || 'US', allowLev: $('#fLev', root).checked };
+  return { targetCagr: v('#fTarget') || 10, maxMdd: Math.abs(v('#fMdd')) || 20, maxTurnover: +p('#fTurn') || 0, years: +p('#fYears') || 15, market: p('#fMkt') || 'US', allowLev: $('#fLev', root).checked };
 }
+function turnHint(v) {
+  return { 0: '자주 바꿔도 괜찮아요', 200: '매달 바꾸는 규칙까지', 100: '1년에 전체를 한 번 바꾸는 정도까지', 50: '분기~반기에 조금씩', 20: '거의 손대지 않는 규칙만' }[v] || '';
+}
+const goalText = (opt) => `연 ${opt.targetCagr}% 이상 · 낙폭 −${opt.maxMdd}% 이내${+opt.maxTurnover ? ` · 연 회전율 ${opt.maxTurnover}% 이하` : ''}`;
 
 async function go(opt) {
   if (busy) return;
@@ -73,7 +80,7 @@ function renderResult() {
   R.innerHTML = `
     <div class="finder-verdict ${met ? 'ok' : 'miss'}">
       <div class="fv-n">${all.length}<small>개 규칙 시험</small></div>
-      <div><b>${met ? `목표(연 ${opt.targetCagr}% 이상 · 낙폭 −${opt.maxMdd}% 이내)를 지킨 규칙 ${met}개를 찾았어요.` : `목표를 모두 지킨 규칙은 없었어요. 가장 가까운 규칙을 보여 드려요.`}</b>
+      <div><b>${met ? `목표(${goalText(opt)})를 지킨 규칙 ${met}개를 찾았어요.` : `목표(${goalText(opt)})를 모두 지킨 규칙은 없었어요. 가장 가까운 규칙을 보여 드려요.`}</b>
       <p class="cap">${fmtYm(yms[1])} ~ ${fmtYm(yms[yms.length - 1])}(${yrs}년), ${last.base === 'USD' ? '달러' : '원화'} 기준, 거래비용 0.1%, 월말 판단. 아래 점 하나가 규칙 하나예요.</p></div>
     </div>
     ${met ? '' : relaxChips(opt)}
@@ -89,6 +96,7 @@ function renderResult() {
     <div class="honest"><b>읽기 전에</b><ul>
       <li>과거 ${yrs}년에 잘 맞은 규칙을 수백 개 중에서 골랐기 때문에 운이 섞여 있어요. <b>앞 ${halfY}년과 뒤 ${halfY}년 성적이 둘 다 괜찮은 규칙</b>(✓ 앞·뒤 모두 목표)일수록 덜 우연이에요.</li>
       <li>순위 규칙은 지금 DB에 있는 종목 안에서만 고르므로 과거에 사라진 종목이 빠져 실제보다 좋게 나올 수 있어요(생존 편향).</li>
+      <li>팩터 규칙(가치·복합·매출 가중)은 분기 실적이 있어야 해서 미국은 2010년, 국내는 2016년 무렵부터 시험할 수 있어요. 시험 기간이 그보다 길면 후보에서 빠져요.${last.fundMissing?.length ? ' 국내 실적 자료는 아직 받는 중이라 이번에는 국내 팩터 규칙을 시험하지 못했어요.' : ''}</li>
       <li>여기 수치는 월 단위 빠른 계산이에요. <b>이 규칙으로 백테스트</b>를 누르면 일별 정밀 계산을 해서 조금 다를 수 있어요.</li>
     </ul></div>`;
   drawScatter();
@@ -98,10 +106,13 @@ function renderResult() {
 }
 /** 목표를 지킨 규칙이 없을 때: 조건을 조금 풀면 몇 개가 되는지 */
 function relaxChips(opt) {
-  const cnt = (t, m) => last.all.filter((x) => x.m.cagr >= t / 100 && x.m.mdd >= -m / 100).length;
   const m2 = Math.min(60, Math.round(opt.maxMdd * 1.5)), t2 = Math.max(3, Math.round(opt.targetCagr * 0.7 * 2) / 2);
+  const tl = +opt.maxTurnover ? +opt.maxTurnover / 100 : Infinity;
+  const cnt = (t, m, tt = tl) => last.all.filter((x) => x.m.cagr >= t / 100 && x.m.mdd >= -m / 100 && x.turnover <= tt).length;
   const a = cnt(opt.targetCagr, m2), b = cnt(t2, opt.maxMdd);
-  return `<div class="chips" style="margin:-4px 0 12px">${a ? `<button class="chip" type="button" data-relax="maxMdd:${m2}">낙폭 한도를 −${m2}%로 넓히면 ${a}개</button>` : ''}${b ? `<button class="chip" type="button" data-relax="targetCagr:${t2}">목표를 연 ${t2}%로 낮추면 ${b}개</button>` : ''}</div>`;
+  const t3 = +opt.maxTurnover ? TURN_OPTS.map((x) => x[0]).filter((v) => v === 0 || v > +opt.maxTurnover).sort((x, y) => (x || 1e9) - (y || 1e9))[0] : null;
+  const c = t3 != null ? cnt(opt.targetCagr, opt.maxMdd, t3 ? t3 / 100 : Infinity) : 0;
+  return `<div class="chips" style="margin:-4px 0 12px">${a ? `<button class="chip" type="button" data-relax="maxMdd:${m2}">낙폭 한도를 −${m2}%로 넓히면 ${a}개</button>` : ''}${b ? `<button class="chip" type="button" data-relax="targetCagr:${t2}">목표를 연 ${t2}%로 낮추면 ${b}개</button>` : ''}${c ? `<button class="chip" type="button" data-relax="maxTurnover:${t3}">회전율 한도를 ${t3 ? `${t3}%로` : '없애면'} ${c}개</button>` : ''}</div>`;
 }
 const fmtYm = (ym) => `${Math.floor(ym / 100)}.${String(ym % 100).padStart(2, '0')}`;
 
@@ -128,14 +139,15 @@ function recCard(c, i, halfY) {
       <div><span class="lb">연수익률</span><b class="${dirClass(c.m.cagr)}">${fmtPct(c.m.cagr)}</b></div>
       <div><span class="lb">최대 낙폭</span><b>${fmtPct(c.m.mdd)}</b></div>
       <div><span class="lb">변동성</span><b>${fmtPct(c.m.vol)}</b></div>
+      <div><span class="lb">연 회전율</span><b class="${last?.maxTurn != null && c.turnover > last.maxTurn ? 't-bad' : ''}">${fmtPct(c.turnover, 0)}</b></div>
       <div class="rc-spark">${spark(c.values)}</div>
     </div>
     <div class="rc-half"><span>앞 ${halfY}년 <b>${fmtPct(c.h1?.cagr)}</b> · 낙폭 ${fmtPct(c.h1?.mdd)}</span><span>뒤 ${halfY}년 <b>${fmtPct(c.h2?.cagr)}</b> · 낙폭 ${fmtPct(c.h2?.mdd)}</span></div>
-    <div class="row"><button class="btn primary small" type="button" data-bt="${esc(c.id)}">이 규칙으로 백테스트</button><span class="cap">연 회전율 ${fmtPct(c.turnover, 0)}</span></div>
+    <div class="row"><button class="btn primary small" type="button" data-bt="${esc(c.id)}">이 규칙으로 백테스트</button></div>
   </article>`;
 }
 function allTable(list) {
-  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>규칙</th><th class="num">연수익률</th><th class="num">최대 낙폭</th><th class="num">앞 절반</th><th class="num">뒤 절반</th><th></th></tr></thead><tbody>${list.map((c) => `<tr><td style="white-space:normal;min-width:260px">${esc(candSentence(c))}</td><td class="num ${dirClass(c.m.cagr)}">${fmtPct(c.m.cagr)}</td><td class="num">${fmtPct(c.m.mdd)}</td><td class="num">${fmtPct(c.h1?.cagr)}</td><td class="num">${fmtPct(c.h2?.cagr)}</td><td><button class="btn small ghost" type="button" data-bt="${esc(c.id)}">백테스트</button></td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>규칙</th><th class="num">연수익률</th><th class="num">최대 낙폭</th><th class="num">연 회전율</th><th class="num">앞 절반</th><th class="num">뒤 절반</th><th></th></tr></thead><tbody>${list.map((c) => `<tr><td style="white-space:normal;min-width:260px">${esc(candSentence(c))}</td><td class="num ${dirClass(c.m.cagr)}">${fmtPct(c.m.cagr)}</td><td class="num">${fmtPct(c.m.mdd)}</td><td class="num">${fmtPct(c.turnover, 0)}</td><td class="num">${fmtPct(c.h1?.cagr)}</td><td class="num">${fmtPct(c.h2?.cagr)}</td><td><button class="btn small ghost" type="button" data-bt="${esc(c.id)}">백테스트</button></td></tr>`).join('')}</tbody></table></div>`;
 }
 function showPicked(id) {
   const c = last.all.find((x) => x.id === id);

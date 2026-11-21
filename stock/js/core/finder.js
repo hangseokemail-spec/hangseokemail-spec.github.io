@@ -1,7 +1,9 @@
 // 전략 찾기 — 목표 연수익률·최대 낙폭·기간을 주면 규칙 조합 수백 개를 월 단위로 빠르게 백테스트해 추천
 // 종목 이름이 아니라 '고르는 기준 × 리밸런싱 × 타이밍' 규칙을 추천한다.
 // 월 단위 계산(월말 종가로 판단·매매). 추천을 누르면 백테스트 탭이 일별 엔진으로 정밀 계산한다.
-import { loadMonthly, loadPx, assetInfo, assetCats, monthEndSeries, getUniverse } from './data.js';
+import { loadMonthly, loadPx, assetInfo, monthEndSeries, getUniverse } from './data.js';
+import { FUND_METRICS, isFundMetric, loadFundPrep } from './fund.js';
+import { FACTORS, needsFund, rankPool, pickWeights } from './factors.js';
 import { ymAdd, todayYm } from './dates.js';
 
 const GROUP_CUR = { US_STOCK: 'USD', US_ETF: 'USD', KR_STOCK: 'KRW', KR_ETF: 'KRW' };
@@ -47,13 +49,22 @@ export function buildCandidates({ market = 'US', allowLev = false }) {
       if (t.id === 'each' && reb === 'A') continue; // 종목별 신호는 매달 확인하므로 주기 차이 없음
       out.push({ id: `${mk}-${f.id}-${reb}-${t.id}`, mk, fam: f.fam, kind: 'static', name: f.name, assets: f.assets, rebalance: f.assets.length === 1 ? 'none' : reb, timing: t.tm || null, tLabel: t.label, tId: t.id, sigName: f.sigName || M.sigName });
     }
-    const rk = (rank, fam, name) => {
-      for (const reb of ['M', 'Q']) for (const t of timings(false)) out.push({ id: `${mk}-${fam}-${JSON.stringify(rank)}-${reb}-${t.id}`, mk, fam, kind: 'rank', name, rank, rebalance: reb, timing: t.tm || null, tLabel: t.label, tId: t.id, sigName: M.sigName });
+    // 개별 주식 순위 규칙은 매달·분기·매년(거의 안 건드리는 사람용) 세 가지 주기로 시험
+    const rk = (rank, fam, name, rebs = ['M', 'Q']) => {
+      for (const reb of rebs) for (const t of timings(false)) out.push({ id: `${mk}-${fam}-${JSON.stringify(rank)}-${reb}-${t.id}`, mk, fam, kind: 'rank', name, rank, rebalance: reb, timing: t.tm || null, tLabel: t.label, tId: t.id, sigName: M.sigName });
     };
+    const R3 = ['M', 'Q', 'A'];
     const stockName = mk === 'US' ? '미국 대형주' : '국내 대형주';
-    for (const n of [3, 5, 10]) rk({ group: M.stock, metric: 'mcap', from: 1, top: n, weighting: 'equal' }, '대형주', `${stockName} 시가총액 상위 ${n}개`);
-    for (const lb of [3, 6, 12]) for (const n of [3, 5, 10]) rk({ group: M.stock, metric: 'mom', from: 1, top: n, lookback: lb, skip: lb === 12 ? 1 : 0, weighting: 'equal' }, '모멘텀', `${stockName} 중 최근 ${lb}개월${lb === 12 ? '(최근 1개월 제외)' : ''} 수익률 상위 ${n}개`);
-    rk({ group: M.stock, metric: 'lowvol', from: 1, top: 10, lookback: 12, weighting: 'equal' }, '저변동', `${stockName} 중 12개월 변동성이 가장 낮은 10개`);
+    for (const n of [3, 5, 10]) rk({ group: M.stock, metric: 'mcap', from: 1, top: n, weighting: 'equal' }, '대형주', `${stockName} 시가총액 상위 ${n}개`, R3);
+    for (const lb of [3, 6, 12]) for (const n of [3, 5, 10]) rk({ group: M.stock, metric: 'mom', from: 1, top: n, lookback: lb, skip: lb === 12 ? 1 : 0, weighting: 'equal' }, '모멘텀', `${stockName} 중 최근 ${lb}개월${lb === 12 ? '(최근 1개월 제외)' : ''} 수익률 상위 ${n}개`, R3);
+    rk({ group: M.stock, metric: 'lowvol', from: 1, top: 10, lookback: 12, weighting: 'equal' }, '저변동', `${stockName} 중 12개월 변동성이 가장 낮은 10개`, R3);
+    // 팩터(논문에서 시장을 이긴 기준) — 드라이브 '시장을 이긴 주식 팩터 정리'
+    const fx = (metric, n, fam) => rk({ group: M.stock, metric, from: 1, top: n, weighting: 'equal' }, fam, `${stockName} 중 ${FACTORS[metric].short} 상위 ${n}개`, R3);
+    fx('x:ep', 10, '팩터·가치'); fx('x:sp', 10, '팩터·가치');
+    fx('x:rmom', 10, '팩터·모멘텀'); fx('x:hi52', 10, '팩터·모멘텀');
+    fx('x:lowbeta', 10, '팩터·저베타'); fx('x:lowbeta', 20, '팩터·저베타');
+    fx('x:vm', 10, '팩터·복합'); fx('x:vq', 10, '팩터·복합'); fx('x:multi4', 10, '팩터·복합');
+    rk({ group: M.stock, metric: 'mcap', from: 1, top: 50, weighting: 'rev', maxW: 5 }, '팩터·매출 가중', `${stockName} 시가총액 상위 50개를 매출 비례로(한 종목 최대 5%)`, ['Q', 'A']);
     const etfName = mk === 'US' ? '미국 ETF' : '국내 ETF';
     for (const lb of [3, 6, 12]) for (const n of [1, 2, 3]) {
       rk({ group: M.etf, metric: 'mom', from: 1, top: n, lookback: lb, skip: 0, weighting: 'equal', excludeCats: ['lev', 'inv', 'single'] }, 'ETF 모멘텀', `${etfName}(레버리지·인버스 제외) 중 최근 ${lb}개월 수익률 상위 ${n}개`);
@@ -99,6 +110,50 @@ function sigLabel(c) {
   return { SPY: 'S&P 500(SPY)', QQQ: '나스닥100(QQQ)', '069500': '코스피200(KODEX 200)' }[k] || keyLabel(k);
 }
 
+const fmtYmDot = (ym) => `${Math.floor(ym / 100)}.${String(ym % 100).padStart(2, '0')}`;
+const CAT_WORD = { lev: '레버리지', inv: '인버스', bond: '채권', cash: '현금성', cmdty: '원자재·금', single: '단일종목', cc: '커버드콜' };
+/** 순위 규칙: 후보 → 점수 → 담기 → 다시 고르기(팔고 사기) */
+function rankSteps(c, r, n, one) {
+  const steps = [];
+  const stock = /STOCK/.test(r.group);
+  const kr = r.group.startsWith('KR');
+  const gName = { US_STOCK: '미국 대형주 목록', KR_STOCK: '국내 대형주 목록', US_ETF: '미국 ETF 목록', KR_ETF: '국내 ETF 목록' }[r.group] || '목록';
+  // 1) 후보(넣고 빼기)
+  let cand;
+  if (r.universe?.length) cand = r.universe.length <= 3 ? `${r.universe.map(keyLabel).join('·')} 중에서만 골라요.` : `${r.universe.map(keyLabel).join('·')} ${r.universe.length}개 중에서만 골라요.`;
+  else if (stock) {
+    const noFund = kr ? '12월 결산이 아닌 회사·우선주' : '미국 밖 회사 TSMC·ASML 등';
+    const scoredByFund = isFundMetric(r.metric) || FACTORS[r.metric]?.fund || r.ff?.key;
+    cand = `${gName}(지금 수집 중인 대형주) 중 ${r.metric !== 'mcap' ? '그달 말 시가총액 상위 50개만 후보로 삼아요' : '그달 말 시가총액 순위로 골라요'}.${scoredByFund ? ` 실적 공시가 없는 종목은 빠져요(${noFund}).` : r.weighting === 'rev' ? ` 분기 매출 자료가 없는 종목(${noFund})은 매출을 고른 종목들의 가운데 값으로 쳐서 담아요.` : ''} ETF·레버리지는 원래 후보에 없어요.`;
+  }
+  else cand = `${gName}에서 골라요.`;
+  if (r.excludeCats?.length) cand += ` ${r.excludeCats.map((x) => CAT_WORD[x] || x).join('·')} ETF는 빼요.`;
+  if (r.exclude?.length) cand += ` ${r.exclude.map(keyLabel).join('·')}는 빼요.`;
+  steps.push({ k: '후보', t: cand });
+  // 2) 점수(순위 기준)
+  let how;
+  if (r.metric === 'mcap') how = '시가총액(주가 × 주식 수)이 큰 순서로 줄을 세워요.';
+  else if (r.metric === 'mom') how = `최근 ${r.lookback}개월 수익률${r.skip ? `(바로 지난 ${r.skip}개월은 빼고)` : ''}이 높은 순서로 줄을 세워요. 배당을 다시 넣은 값으로 재요.`;
+  else if (r.metric === 'lowvol') how = `최근 ${r.lookback || 12}개월 월 수익률이 덜 흔들린(변동성이 낮은) 순서로 줄을 세워요.`;
+  else if (FACTORS[r.metric]) how = `${FACTORS[r.metric].how} 근거: ${FACTORS[r.metric].paper}.`;
+  else if (isFundMetric(r.metric)) how = `${FUND_METRICS[r.metric.slice(2)].label}이 높은 순서로 줄을 세워요. 실적은 공시한 날 뒤부터만 써요.`;
+  else how = '';
+  if (how) steps.push({ k: '점수', t: how });
+  // 3) 담기(몇 %씩)
+  const pct = (100 / n).toFixed(1).replace(/\.0$/, '');
+  const wTxt = one ? '1위 하나에 100%를 담아요.'
+    : r.weighting === 'rev' ? `상위 ${n}개를 최근 4분기 매출에 비례해서 담아요${r.maxW ? `(한 종목은 최대 ${r.maxW}%, 넘는 몫은 나머지에 나눠요)` : ''}.`
+      : r.weighting === 'mcap' ? `상위 ${n}개를 시가총액에 비례해서 담아요${r.maxW ? `(한 종목 최대 ${r.maxW}%)` : ''}.`
+        : `${(r.from || 1) > 1 ? `${r.from}~${r.top}위` : `상위 ${n}개`}를 한 종목에 ${pct}%씩 똑같이 담아요.`;
+  steps.push({ k: '담기', t: wTxt });
+  // 4) 다시 고르기(언제 사고팔지)
+  const when = REB_WORD[c.rebalance] || '매달 말';
+  steps.push({ k: '다시 고르기', t: one
+    ? `${when}에 다시 줄을 세워 1위가 바뀌면 지금 것을 모두 팔고 새 1위를 사요. 그 사이에는 사고팔지 않아요.`
+    : `${when}에 다시 줄을 세워요. 순위 밖으로 밀려난 종목은 모두 팔고, 새로 들어온 종목을 사요. 계속 남은 종목도 ${r.weighting === 'equal' || !r.weighting ? `다시 ${pct}%씩` : '새 비중대로'} 맞춰요. 그 사이에는 사고팔지 않아요.` });
+  return steps;
+}
+
 /**
  * 규칙 → 그대로 따라 할 수 있는 행동 규칙
  * {title, short, steps:[{k:'평소'|'다시 고르기'|'비중 맞추기'|'확인'|'팔기'|'돌아오기', t}]}
@@ -119,9 +174,9 @@ export function candRule(c) {
   } else {
     const r = c.rank || {};
     const one = r.top === 1;
-    hold = one ? c.name : `${c.name} 같은 비중`;
-    const pool = /STOCK/.test(r.group) && r.metric && r.metric !== 'mcap' ? ' 후보는 그달 시가총액 상위 50개예요.' : '';
-    steps.push({ k: '다시 고르기', t: one ? `${REB_WORD[c.rebalance] || '매달 말'}에 ${josa(c.name, '을/를')} 골라 전부 사요. 고른 것이 바뀌면 갈아타요.` : `${REB_WORD[c.rebalance] || '매달 말'}에 ${josa(c.name, '을/를')} 새로 뽑아 같은 비중으로 사요. 순위에서 빠진 종목은 팔아요.${pool}` });
+    const n = r.top - (r.from || 1) + 1;
+    hold = one ? c.name : r.weighting === 'rev' ? c.name : `${c.name} 같은 비중`;
+    rankSteps(c, r, n, one).forEach((x) => steps.push(x));
   }
   let tag = '';
   if (tm) {
@@ -149,6 +204,12 @@ export function candRule(c) {
       steps.push({ k: '돌아오기', t: '그 종목이 다시 자기 10개월 평균선 이상이 되면 → 그 몫을 다시 사요.' });
     }
   }
+  if (c.kind === 'rank' && c.nowPicks?.length) {
+    const eq = c.nowPicks.every((x) => Math.abs(x[1] - c.nowPicks[0][1]) < 1e-6);
+    const list = c.nowPicks.slice(0, 20).map(([k, w]) => `${keyLabel(k)}${eq ? '' : ` ${(w * 100).toFixed(1).replace(/\.0$/, '')}%`}`).join(' · ');
+    steps.push({ k: '지금 고른다면', t: `${fmtYmDot(c.nowYm)} 말 값으로 이 규칙을 적용하면 ${list}${c.nowPicks.length > 20 ? ` 외 ${c.nowPicks.length - 20}개` : ''}${eq ? `(각 ${(c.nowPicks[0][1] * 100).toFixed(1).replace(/\.0$/, '')}%)` : ''}를 담아요.${tm && c.nowIn === false ? ' 단, 지금은 피신 조건이라 이 종목 대신 피신처를 들고 있을 때예요.' : ''}` });
+  }
+  if (c.turnover != null) steps.push({ k: '거래 양', t: `1년에 평균 ${Math.round(c.turnover * 100)}%를 갈아 끼워요(연 회전율). ${c.turnover < 0.25 ? '거의 손대지 않는 편이에요.' : c.turnover < 0.6 ? '1년에 몇 번 정도 손봐요.' : c.turnover < 1.5 ? '자주 바꾸는 편이라 거래비용·세금을 생각해야 해요.' : '매우 자주 바꿔요. 거래비용·세금이 수익을 많이 깎을 수 있어요.'}` });
   const title = tm ? `${hold} · ${tag}` : (c.kind === 'static' && c.assets.length === 1 ? `${singleLabel(c)}만 계속 들고 있기` : c.kind === 'static' ? `${hold}, ${REB_WORD[c.rebalance] || ''} 비중 맞추기` : `${hold}, ${(REB_WORD[c.rebalance] || '').replace(/\(.*\)/, '')} ${c.rank?.top === 1 ? '갈아타기' : '교체'}`);
   return { title, steps };
 }
@@ -179,39 +240,28 @@ async function monthlyFrame(groups, extraKeys, base, fxNeeded) {
     if (!m && assetInfo(k)) { try { const s = monthEndSeries(await loadPx(k), true); const cur = assetInfo(k).cur || 'USD'; m = new Map(s.yms.map((y, i) => [y, conv(cur, y, s.v[i])])); } catch { m = null; } }
     if (m) series.set(k, m);
   }
-  return { tables, series, conv };
+  return { tables, series, conv, mi: {}, rcache: new Map(), fund: {} };
 }
 
 // ------------------------------------------------------------------ 월 단위 시뮬레이션
 function ret(m, a, b) { const x = m?.get(a), y = m?.get(b); return x > 0 && y > 0 ? y / x - 1 : null; }
 
-function rankPick(t, r, mi, conv, base, ym) {
+/** 그달 말에 고를 종목과 비중(백테스트 엔진과 같은 rankPool·pickWeights). 같은 규칙·같은 달은 한 번만 계산 */
+function rankPick(F, r, ym) {
+  const t = F.tables[r.group];
+  const mi = F.mi[r.group] || (F.mi[r.group] = new Map(t.months.map((m, i) => [m, i])));
   const m = mi.get(ym);
   if (m === undefined) return null;
-  const val = (arr, ti, q) => { const j = q - t.o[ti]; return j >= 0 && j < arr[ti].length ? arr[ti][j] : null; };
-  const only = r.universe ? new Set(r.universe) : null, exC = new Set(r.excludeCats || []);
-  const cand = [];
-  for (let ti = 0; ti < t.tickers.length; ti++) {
-    const k = t.tickers[ti];
-    if (only && !only.has(k)) continue;
-    if (val(t.tr, ti, m) == null) continue;
-    if (exC.size && [...assetCats(assetInfo(k))].some((x) => exC.has(x))) continue;
-    let score = null;
-    if (r.metric === 'mcap') score = val(t.mc, ti, m);
-    else if (r.metric === 'mom') { const a = val(t.tr, ti, m - (r.skip || 0)), b = val(t.tr, ti, m - (r.skip || 0) - r.lookback); if (a != null && b != null) score = a / b - 1; }
-    else if (r.metric === 'lowvol') {
-      const L = r.lookback || 12, rs = [];
-      for (let q = m - L + 1; q <= m; q++) { const a = val(t.tr, ti, q), b = val(t.tr, ti, q - 1); if (a == null || b == null) { rs.length = 0; break; } rs.push(a / b - 1); }
-      if (rs.length === L) { const mu = rs.reduce((x, y) => x + y, 0) / L; score = -Math.sqrt(rs.reduce((x, y) => x + (y - mu) ** 2, 0) / (L - 1)); }
-    }
-    if (score == null || !isFinite(score)) continue;
-    cand.push({ k, score, mc: val(t.mc, ti, m) });
-  }
-  const poolTop = r.poolTop ?? (r.group.endsWith('STOCK') && r.metric !== 'mcap' ? 50 : null);
-  if (poolTop) { const keep = new Set(cand.filter((c) => c.mc > 0).sort((a, b) => b.mc - a.mc).slice(0, poolTop).map((c) => c.k)); for (let i = cand.length - 1; i >= 0; i--) if (!keep.has(cand[i].k)) cand.splice(i, 1); }
-  cand.sort((a, b) => b.score - a.score || (a.k < b.k ? -1 : 1));
-  const sel = cand.slice((r.from || 1) - 1, r.top);
-  return sel.length ? sel.map((x) => [x.k, 1 / sel.length]) : null;
+  const fprep = needsFund(r) ? F.fund?.[r.group] : null;
+  if (needsFund(r) && !fprep) return null;
+  const key = `${JSON.stringify(r)}|${ym}`;
+  if (F.rcache.has(key)) return F.rcache.get(key);
+  const pool = rankPool(t, r, m, fprep);
+  const sel = pool.slice((r.from || 1) - 1, r.top);
+  const w = sel.length ? pickWeights(sel, r) : null;
+  const out = sel.length ? sel.map((x, i) => [x.k, w[i]]) : null;
+  F.rcache.set(key, out);
+  return out;
 }
 
 function signalState(tm, sigSer, cashSer, yms, t, state) {
@@ -241,8 +291,8 @@ export function simulateMonthly(c, F, yms, base, feeRate = 0.001) {
   const sigSer = F.series.get(sk) || serOfLater(sk), cashSer = F.series.get(M.cash);
   const defKey = c.timing?.to;
   const defSer = defKey ? F.series.get(defKey) : null;
-  let table = null, mi = null;
-  if (c.kind === 'rank') { table = F.tables[c.rank.group]; mi = new Map(table.months.map((m, i) => [m, i])); }
+  let table = null;
+  if (c.kind === 'rank') table = F.tables[c.rank.group];
   const serOf = (k) => {
     if (F.series.has(k)) return F.series.get(k);
     if (table) { const ti = table.tickers.indexOf(k); if (ti >= 0) { const m = new Map(); const arr = table.tr[ti]; for (let j = 0; j < arr.length; j++) if (arr[j] != null) m.set(table.months[table.o[ti] + j], F.conv(GROUP_CUR[c.rank.group], table.months[table.o[ti] + j], arr[j])); F.series.set(k, m); return m; } }
@@ -281,7 +331,7 @@ export function simulateMonthly(c, F, yms, base, feeRate = 0.001) {
   const isReb = (t) => { const mo = yms[t] % 100; return c.rebalance === 'M' || (c.rebalance === 'Q' && mo % 3 === 0) || (c.rebalance === 'A' && mo === 12); };
   // t=0: 시작 직전 달 말
   if (c.kind === 'static') base_w = c.assets.map(([k, w]) => [k, w / 100]);
-  else { base_w = rankPick(table, c.rank, mi, F.conv, base, yms[0]); if (!base_w) return null; }
+  else { base_w = rankPick(F, c.rank, yms[0]); if (!base_w) return null; }
   inMkt = c.timing ? signalState(c.timing, sigSer, cashSer, yms, 0, true) : true;
   if (c.timing && c.timing.signal !== 'each' && !inMkt) nOut = 1; // 처음부터 피신으로 시작
   reset(1, effective());
@@ -301,7 +351,7 @@ export function simulateMonthly(c, F, yms, base, feeRate = 0.001) {
     let change = false;
     if (c.timing) { const ns = signalState(c.timing, sigSer, cashSer, yms, t, inMkt); if (ns !== inMkt) { if (!ns && c.timing.signal !== 'each') nOut++; inMkt = ns; change = true; } if (c.timing.signal === 'each') change = true; }
     if (c.rebalance !== 'none' && isReb(t)) {
-      if (c.kind === 'rank') { const p = rankPick(table, c.rank, mi, F.conv, base, yms[t]); if (p) base_w = p; }
+      if (c.kind === 'rank') { const p = rankPick(F, c.rank, yms[t]); if (p) base_w = p; }
       change = true;
     }
     if (change) reset(V, effective());
@@ -309,7 +359,9 @@ export function simulateMonthly(c, F, yms, base, feeRate = 0.001) {
   void eachIn;
   // 마지막 달 말 기준 지금 상태(종목별 신호는 제외)
   const nowIn = c.timing && c.timing.signal !== 'each' ? signalState(c.timing, sigSer, cashSer, yms, T, inMkt) : null;
-  return { values, turnover: turnover / Math.max(1, T / 12), nOut, outMonths, nowIn, nowYm: yms[T] };
+  // 이 규칙대로 마지막 달 말에 고른다면(순위 규칙): 지금 따라 할 때 살 종목
+  const nowPicks = c.kind === 'rank' ? rankPick(F, c.rank, yms[T]) : null;
+  return { values, turnover: turnover / Math.max(1, T / 12), nOut, outMonths, nowIn, nowYm: yms[T], nowPicks };
 }
 
 export function monthlyMetrics(values) {
@@ -330,6 +382,7 @@ export function monthlyMetrics(values) {
 export async function findStrategies(opts) {
   const { market = 'US', years = 15, allowLev = false, onProgress } = opts;
   const target = (+opts.targetCagr || 10) / 100, limit = -Math.abs(+opts.maxMdd || 25) / 100;
+  const maxTurn = +opts.maxTurnover > 0 ? +opts.maxTurnover / 100 : null; // 연 회전율 한도(없으면 null)
   const base = market === 'US' ? 'USD' : 'KRW';
   const U = getUniverse();
   const lastE = U?.byKey.get('SPY')?.e;
@@ -344,6 +397,7 @@ export async function findStrategies(opts) {
   Object.values(MKT).forEach((m) => { if (market === 'ALL' || MKT[market] === m) [m.sig, m.cash, m.bond].forEach((k) => extra.add(k)); });
   onProgress?.(0, cands.length, '데이터 준비');
   const F = await monthlyFrame(groups, [...extra], base, market !== 'US');
+  for (const g of groups) if (g.endsWith('STOCK') && cands.some((c) => c.kind === 'rank' && c.rank.group === g && needsFund(c.rank))) F.fund[g] = await loadFundPrep(g);
   const out = [];
   for (let i = 0; i < cands.length; i++) {
     const c = cands[i];
@@ -352,13 +406,13 @@ export async function findStrategies(opts) {
       const m = monthlyMetrics(r.values);
       const half = Math.floor((yms.length - 1) / 2);
       const h1 = monthlyMetrics(r.values.slice(0, half + 1)), h2 = monthlyMetrics(r.values.slice(half));
-      if (m) out.push({ ...c, m, h1, h2, turnover: r.turnover, values: r.values, nOut: r.nOut, outMonths: r.outMonths, nowIn: r.nowIn, nowYm: r.nowYm, ok: m.cagr >= target && m.mdd >= limit });
+      if (m) out.push({ ...c, m, h1, h2, turnover: r.turnover, values: r.values, nOut: r.nOut, outMonths: r.outMonths, nowIn: r.nowIn, nowYm: r.nowYm, nowPicks: r.nowPicks, ok: m.cagr >= target && m.mdd >= limit && (maxTurn == null || r.turnover <= maxTurn) });
     }
     if (i % 20 === 0) { onProgress?.(i + 1, cands.length, '계산'); await new Promise((res) => setTimeout(res, 0)); }
   }
   onProgress?.(cands.length, cands.length, '정리');
   // 점수: 목표 충족 후보는 (연수익률 ÷ |낙폭|) + 앞뒤 절반 일관성, 아니면 목표까지 거리
-  const dist = (x) => Math.max(0, target - x.m.cagr) / Math.max(0.01, target) + Math.max(0, limit - x.m.mdd) / Math.max(0.01, -limit);
+  const dist = (x) => Math.max(0, target - x.m.cagr) / Math.max(0.01, target) + Math.max(0, limit - x.m.mdd) / Math.max(0.01, -limit) + (maxTurn == null ? 0 : Math.max(0, x.turnover - maxTurn) / Math.max(0.1, maxTurn));
   for (const x of out) {
     const cons = Math.min(x.h1?.cagr ?? 0, x.h2?.cagr ?? 0);
     x.consistent = (x.h1?.cagr ?? 0) >= target * 0.6 && (x.h2?.cagr ?? 0) >= target * 0.6 && (x.h1?.mdd ?? 0) >= limit * 1.25 && (x.h2?.mdd ?? 0) >= limit * 1.25;
@@ -373,7 +427,7 @@ export async function findStrategies(opts) {
   const pick = (list, n) => { const fam = {}; const res = []; for (const x of list) { const k = `${x.fam}-${x.mk}`; if ((fam[k] || 0) >= 2) continue; fam[k] = (fam[k] || 0) + 1; res.push(x); if (res.length >= n) break; } return res; };
   const qualified = out.filter((x) => x.ok);
   const recs = pick(qualified.length ? qualified : out, 6);
-  return { yms, base, target, limit, all: out, qualified, recs, count: cands.length };
+  return { yms, base, target, limit, maxTurn, all: out, qualified, recs, count: cands.length, fundMissing: Object.entries(F.fund).filter(([, v]) => !v).map(([g]) => g) };
 }
 
 /** 추천 → 백테스트 탭 상태 */

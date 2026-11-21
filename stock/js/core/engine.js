@@ -1,6 +1,8 @@
 // 백테스트 엔진 — 순수 계산(화면과 무관). 일별로 보유 수량을 따라가며 평가합니다.
 import { loadPx, loadMonthly, assetInfo, assetCats } from './data.js';
-import { FUND_METRICS, isFundMetric, loadFundPrep, fundAt, cutoffOf } from './fund.js';
+import { isFundMetric, loadFundPrep } from './fund.js';
+import { FACTORS, needsFund, metricNeed, rankPool, pickWeights, capWeights } from './factors.js';
+export { capWeights };
 import { dayToYm, ymAdd, firstDayOfYm, todayYm, ymDiff, parseYm } from './dates.js';
 import { planTiming, checkMask, alignTo, monthlyRet, DEF_LABEL } from './signals.js';
 
@@ -308,33 +310,24 @@ async function runRank(s, onProgress) {
   const notes = [];
   const M = tbl.months;
   const mi = new Map(M.map((m, i) => [m, i]));
-  const val = (arr, ti, m) => {
-    const j = m - tbl.o[ti];
-    return j >= 0 && j < arr[ti].length ? arr[ti][j] : null;
-  };
   const freq = ['M', 'Q', 'S', 'A'].includes(s.rebalance) ? s.rebalance : 'M';
   if (freq !== s.rebalance) notes.push('순위 전략은 정해진 주기로만 종목을 바꿀 수 있어 매월 리밸런싱으로 계산했습니다.');
   const lastTblYm = M[M.length - 1];
   let endYm = s.end ? Math.min(parseYm(s.end), lastCompleteYm(firstDayOfYm(lastTblYm))) : lastCompleteYm(firstDayOfYm(lastTblYm));
-  const need = r.metric === 'mom' ? r.lookback + (r.skip || 0) : r.metric === 'lowvol' ? r.lookback : 0;
-  // 실적 지표(순위 기준 또는 조건)
-  const fKey = isFundMetric(r.metric) ? r.metric.slice(2) : null;
-  const ff = r.ff?.key && FUND_METRICS[r.ff.key] && r.ff.min != null && r.ff.min !== '' ? { key: r.ff.key, min: +r.ff.min / 100 } : null;
+  const need = metricNeed(r);
+  // 실적 지표(순위 기준·조건·매출 비례 비중)
   let fprep = null;
-  if (fKey || ff) {
+  if (needsFund(r)) {
     if (!r.group.endsWith('STOCK')) throw new Error('실적 지표는 개별 주식에서만 쓸 수 있어요(ETF는 실적 자료가 없어요).');
     fprep = await loadFundPrep(r.group);
     if (!fprep) throw new Error(r.group.startsWith('KR') ? '국내 주식 실적 자료는 아직 준비 중이에요(금감원 DART에서 받는 중). 지금은 미국 주식에서만 쓸 수 있어요.' : '실적 자료를 불러오지 못했어요.');
   }
+  const fundScored = isFundMetric(r.metric) || FACTORS[r.metric]?.fund || r.ff?.key;
   let earliest = ymAdd(M[0], need + 1);
-  if (fprep) {
-    // 실적 지표가 있는 종목이 15개 이상인 첫 달부터
-    const k0 = fKey || ff.key;
-    for (let m = mi.get(200901) ?? 0; m < M.length; m++) {
-      const cut = cutoffOf(M[m]);
-      let n = 0;
-      for (const t of tbl.tickers) { const f = fundAt(fprep, t, cut); if (f && f[k0] != null) n++; }
-      if (n >= 15) { earliest = Math.max(earliest, ymAdd(M[m], 1)); break; }
+  if (fprep && fundScored) {
+    // 순위를 매길 수 있는 종목이 15개 이상인 첫 달 다음 달부터
+    for (let m = Math.max(mi.get(200901) ?? 0, mi.get(earliest) ?? 0); m < M.length; m++) {
+      if (rankPool(tbl, r, m, fprep).length >= 15) { earliest = Math.max(earliest, ymAdd(M[m], 1)); break; }
     }
   }
   let startYm = s.start ? parseYm(s.start) : ymAdd(endYm, -119);
@@ -348,54 +341,10 @@ async function runRank(s, onProgress) {
   for (const ym of rebMonths) {
     const m = mi.get(ym);
     if (m === undefined) continue;
-    const cand = [];
-    const cut = fprep ? cutoffOf(ym) : 0;
-    for (let ti = 0; ti < tbl.tickers.length; ti++) {
-      const tr = val(tbl.tr, ti, m);
-      if (tr == null) continue;
-      let score = null, fv = null;
-      const fd = fprep ? fundAt(fprep, tbl.tickers[ti], cut) : null;
-      if (ff) { fv = fd?.[ff.key] ?? null; if (fv == null || fv < ff.min) continue; }
-      if (fKey) score = fd?.[fKey] ?? null;
-      else if (r.metric === 'mcap') score = val(tbl.mc, ti, m);
-      else if (r.metric === 'mom') {
-        const a = val(tbl.tr, ti, m - (r.skip || 0));
-        const b = val(tbl.tr, ti, m - (r.skip || 0) - r.lookback);
-        if (a != null && b != null) score = a / b - 1;
-      } else if (r.metric === 'lowvol') {
-        // 최근 L개월 월간 수익률의 표준편차(연환산)가 낮을수록 위
-        const L = r.lookback || 12, rs = [];
-        for (let q = m - L + 1; q <= m; q++) {
-          const a = val(tbl.tr, ti, q), b = val(tbl.tr, ti, q - 1);
-          if (a == null || b == null) { rs.length = 0; break; }
-          rs.push(a / b - 1);
-        }
-        if (rs.length === L && L > 1) {
-          const mu = rs.reduce((t, x) => t + x, 0) / L;
-          score = -Math.sqrt(rs.reduce((t, x) => t + (x - mu) ** 2, 0) / (L - 1)) * Math.sqrt(12);
-        }
-      }
-      if (score == null || !isFinite(score)) continue;
-      cand.push({ k: tbl.tickers[ti], score, mc: val(tbl.mc, ti, m), vol: val(tbl.vol, ti, m), fv });
-    }
-    const ex = new Set(r.exclude || []);
-    const exCats = new Set(r.excludeCats || []);
-    const only = r.universe?.length ? new Set(r.universe) : null;
-    // 그 시점의 대형주만 후보로(지금 큰 종목을 과거에 미리 고르는 편향 줄이기): 모멘텀·저변동은 그달 시가총액 상위 poolTop개 안에서
-    const poolTop = r.poolTop ?? (r.group.endsWith('STOCK') && r.metric !== 'mcap' ? 50 : null);
-    let inPool = null;
-    if (poolTop) { const byMc = cand.filter((c) => c.mc > 0).sort((a, b) => b.mc - a.mc).slice(0, poolTop); inPool = new Set(byMc.map((c) => c.k)); }
-    const pool = cand.filter((c) => !ex.has(c.k) && (!only || only.has(c.k)) && (!inPool || inPool.has(c.k)) && (!exCats.size || ![...assetCats(assetInfo(c.k))].some((x) => exCats.has(x))));
-    pool.sort((a, b) => b.score - a.score || (a.k < b.k ? -1 : 1));
+    const pool = rankPool(tbl, r, m, fprep);
     const sel = pool.slice(Math.max(0, (r.from || 1) - 1), r.top);
     if (!sel.length) continue;
-    let w;
-    if (r.weighting === 'mcap' && sel.every((x) => x.mc)) {
-      const t = sel.reduce((a, x) => a + x.mc, 0); w = sel.map((x) => x.mc / t);
-    } else if (r.weighting === 'invvol' && sel.every((x) => x.vol)) {
-      const t = sel.reduce((a, x) => a + 1 / x.vol, 0); w = sel.map((x) => 1 / x.vol / t);
-    } else w = sel.map(() => 1 / sel.length);
-    if (r.maxW) w = capWeights(w, r.maxW / 100);
+    const w = pickWeights(sel, r);
     picks.set(ym, sel.map((x, i) => ({ key: x.k, w: w[i], score: x.score, mc: x.mc })));
     sel.forEach((x) => used.add(x.k));
   }
@@ -449,29 +398,18 @@ async function runRank(s, onProgress) {
   return res;
 }
 
-/** 상한 초과분을 나머지에 비례 재배분(반복) */
-export function capWeights(w, cap) {
-  const out = w.slice();
-  if (cap * out.length < 1 - 1e-12) return out.map(() => 1 / out.length);
-  for (let it = 0; it < 100; it++) {
-    let excess = 0, free = 0;
-    for (let i = 0; i < out.length; i++) { if (out[i] > cap) { excess += out[i] - cap; out[i] = cap; } else if (out[i] < cap) free += out[i]; }
-    if (excess < 1e-12) break;
-    for (let i = 0; i < out.length; i++) if (out[i] < cap) out[i] += excess * (out[i] / free);
-  }
-  return out;
-}
-
 function rankDisclaimer(r) {
   const base = '순위 전략은 지금 수집 목록(현재 대형주 중심)에 있는 종목만 후보로 삼아, 과거에 상장폐지·탈락한 종목이 빠져 있습니다(생존 편향).';
   const kr = r.group.startsWith('KR');
-  const fund = isFundMetric(r.metric) || r.ff?.key
+  const fx = FACTORS[r.metric];
+  const fxNote = fx ? ` 팩터 '${fx.short}': ${fx.how} (근거 ${fx.paper})` : '';
+  const fund = isFundMetric(r.metric) || fx?.fund || r.weighting === 'rev' || r.ff?.key
     ? ` 실적은 ${kr ? '금감원 DART 공시(연결 우선, 없으면 별도)' : 'SEC 공시(XBRL)'}의 분기 값이고, 달말 이틀 전까지 공시된 분기만 그 달말에 썼습니다(그때 알 수 없던 값은 쓰지 않음). 성장률은 기준 분기가 적자·0이면 계산하지 않고, 이익률은 최근 4분기 합으로 셉니다.${kr ? ' 순이익은 지배주주 몫, 12월 결산 회사만 담았습니다.' : ' 미국 외 회사(TSMC·ASML 등)는 분기 공시가 없어 빠집니다.'}`
     : '';
-  if (fund) return `${base} 그달 시가총액 상위 ${r.poolTop ?? 50}개 안에서 골랐습니다.${fund}`;
+  if (fund) return `${base}${r.metric === 'mcap' ? '' : ` 그달 시가총액 상위 ${r.poolTop ?? 50}개 안에서 골랐습니다.`}${fxNote}${fund}`;
   if (r.metric === 'mcap') return `${base} 과거 시가총액은 종가×상장주식수로 추정하며, 과거 주식수가 없는 기간은 가장 오래된 주식수를 씁니다.`;
-  if (r.group.endsWith('STOCK')) return `${base} 그래서 모멘텀·저변동성은 그달 시가총액 상위 ${r.poolTop ?? 50}개 안에서만 골라, 지금 큰 종목을 과거에 미리 고르는 편향을 줄였습니다.`;
-  return base;
+  if (r.group.endsWith('STOCK')) return `${base} 그래서 모멘텀·저변동성·팩터는 그달 시가총액 상위 ${r.poolTop ?? 50}개 안에서만 골라, 지금 큰 종목을 과거에 미리 고르는 편향을 줄였습니다.${fxNote}`;
+  return `${base}${fxNote}`;
 }
 
 // ------------------------------------------------------------------ 시뮬레이션 코어
