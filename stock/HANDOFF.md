@@ -81,7 +81,7 @@
 - 마스터 계정은 연결 뒤 처음 로그인할 때 원격에 자동 등록된다(`login`이 원격에서 'none'을 받으면 `register` 후 다시 `login`). 그 뒤로 마스터 데이터도 기기 사이에 동기화된다.
 
 **다시 배포할 때(Code.gs를 고쳤을 때)**
-- 사용자 PC의 키트 폴더(KIT_PATH)에 새 Code.gs를 넣고, 사용자에게 `배포하기.cmd` 두 번 클릭만 부탁한다. `webapp_url.txt`의 ID로 `clasp deploy -i`를 하므로 **주소가 바뀌지 않는다**.
+- 사용자 PC의 키트 폴더(경로는 프로젝트 문서 13절)에 새 Code.gs를 넣고, 사용자에게 `배포하기.cmd` 두 번 클릭만 부탁한다. `webapp_url.txt`의 ID로 `clasp deploy -i`를 하므로 **주소가 바뀌지 않는다**.
 - Claude는 그 폴더를 `device_request_folder_access`로 열 수 있다(이번에 허용됨). 파일은 `device_commit_files`로 넣고, 결과는 `device_bash`로 읽는다. 사용자에게 주소나 오류 문구를 복사해 달라고 하지 않는다.
   - `deploy_log.txt`: 단계별 기록(clasp push·deploy 출력 포함)
   - `cmd_log.txt`: 실행 직전 PowerShell 문법 검사 결과, PS 버전, LanguageMode, node 유무
