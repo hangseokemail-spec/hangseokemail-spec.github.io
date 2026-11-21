@@ -55,8 +55,9 @@ export function quarterMetrics(q) {
       if (ok && sr > 0) {
         const so = four.reduce((t, r) => (r[3] == null ? NaN : t + r[3]), 0);
         const sn = four.reduce((t, r) => (r[4] == null ? NaN : t + r[4]), 0);
-        opm = isFinite(so) ? so / sr : null;
-        npm = isFinite(sn) ? sn / sr : null;
+        // 이익이 매출보다 큰 이익률(지주회사의 지분법 이익 등)은 사업 규모를 뜻하지 않아 버림
+        opm = isFinite(so) && so <= sr ? so / sr : null;
+        npm = isFinite(sn) && sn <= sr ? sn / sr : null;
       }
     }
     // 재무상태표: 그 분기말 잔액과 1년 전 잔액
