@@ -139,8 +139,10 @@ function rankPick(t, r, mi, conv, base, ym) {
       if (rs.length === L) { const mu = rs.reduce((x, y) => x + y, 0) / L; score = -Math.sqrt(rs.reduce((x, y) => x + (y - mu) ** 2, 0) / (L - 1)); }
     }
     if (score == null || !isFinite(score)) continue;
-    cand.push({ k, score });
+    cand.push({ k, score, mc: val(t.mc, ti, m) });
   }
+  const poolTop = r.poolTop ?? (r.group.endsWith('STOCK') && r.metric !== 'mcap' ? 50 : null);
+  if (poolTop) { const keep = new Set(cand.filter((c) => c.mc > 0).sort((a, b) => b.mc - a.mc).slice(0, poolTop).map((c) => c.k)); for (let i = cand.length - 1; i >= 0; i--) if (!keep.has(cand[i].k)) cand.splice(i, 1); }
   cand.sort((a, b) => b.score - a.score || (a.k < b.k ? -1 : 1));
   const sel = cand.slice((r.from || 1) - 1, r.top);
   return sel.length ? sel.map((x) => [x.k, 1 / sel.length]) : null;

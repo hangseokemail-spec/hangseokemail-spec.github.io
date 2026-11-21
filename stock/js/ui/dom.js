@@ -85,7 +85,7 @@ export function popover(anchor, html) {
 export function debounce(fn, ms = 200) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 /** 설정 */
-const DEFAULT_SETTINGS = { theme: 'light', bandDaily: false, updown: 'kr', currency: 'KRW', feeBp: 10, apiKey: '', model: 'claude-sonnet-5-5', altStyle: 'equity', noCommodity: true, bandAbs: 3, capSingle: 20, capProduct: 25, hideAmounts: false };
+const DEFAULT_SETTINGS = { theme: 'dark', bandDaily: false, updown: 'kr', currency: 'KRW', feeBp: 10, apiKey: '', model: 'claude-sonnet-5-5', altStyle: 'equity', noCommodity: true, bandAbs: 3, capSingle: 20, capProduct: 25, hideAmounts: false };
 export function settings() { return { ...DEFAULT_SETTINGS, ...(store('ss.settings') || {}), ...(vaultGet('ss.priv') || {}) }; }
 export function saveSettings(patch) {
   const s = { ...settings(), ...patch };
@@ -99,6 +99,7 @@ export function applyTheme(s = settings()) {
   const dark = s.theme === 'dark' || (s.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   if (dark) document.documentElement.dataset.theme = 'dark'; else delete document.documentElement.dataset.theme;
   if (s.updown === 'global') document.documentElement.dataset.updown = 'global'; else delete document.documentElement.dataset.updown;
+  const lb = document.getElementById('themeLb'); if (lb) lb.textContent = dark ? '밝게' : '어둡게';
   window.dispatchEvent(new Event('themechange'));
 }
 

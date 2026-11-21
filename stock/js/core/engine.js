@@ -357,7 +357,11 @@ async function runRank(s, onProgress) {
     const ex = new Set(r.exclude || []);
     const exCats = new Set(r.excludeCats || []);
     const only = r.universe?.length ? new Set(r.universe) : null;
-    const pool = cand.filter((c) => !ex.has(c.k) && (!only || only.has(c.k)) && (!exCats.size || ![...assetCats(assetInfo(c.k))].some((x) => exCats.has(x))));
+    // 그 시점의 대형주만 후보로(지금 큰 종목을 과거에 미리 고르는 편향 줄이기): 모멘텀·저변동은 그달 시가총액 상위 poolTop개 안에서
+    const poolTop = r.poolTop ?? (r.group.endsWith('STOCK') && r.metric !== 'mcap' ? 50 : null);
+    let inPool = null;
+    if (poolTop) { const byMc = cand.filter((c) => c.mc > 0).sort((a, b) => b.mc - a.mc).slice(0, poolTop); inPool = new Set(byMc.map((c) => c.k)); }
+    const pool = cand.filter((c) => !ex.has(c.k) && (!only || only.has(c.k)) && (!inPool || inPool.has(c.k)) && (!exCats.size || ![...assetCats(assetInfo(c.k))].some((x) => exCats.has(x))));
     pool.sort((a, b) => b.score - a.score || (a.k < b.k ? -1 : 1));
     const sel = pool.slice(Math.max(0, (r.from || 1) - 1), r.top);
     if (!sel.length) continue;
@@ -437,6 +441,7 @@ export function capWeights(w, cap) {
 function rankDisclaimer(r) {
   const base = '순위 전략은 지금 수집 목록(현재 대형주 중심)에 있는 종목만 후보로 삼아, 과거에 상장폐지·탈락한 종목이 빠져 있습니다(생존 편향).';
   if (r.metric === 'mcap') return `${base} 과거 시가총액은 종가×상장주식수로 추정하며, 과거 주식수가 없는 기간은 가장 오래된 주식수를 씁니다.`;
+  if (r.group.endsWith('STOCK')) return `${base} 그래서 모멘텀·저변동성은 그달 시가총액 상위 ${r.poolTop ?? 50}개 안에서만 골라, 지금 큰 종목을 과거에 미리 고르는 편향을 줄였습니다.`;
   return base;
 }
 

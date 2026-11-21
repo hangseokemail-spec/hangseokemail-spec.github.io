@@ -388,7 +388,9 @@ export function parseCommand(text, prev = null) {
   } else defaulted.push('rebalance');
 
   // ---- 매수·매도 타이밍 / 조건부 리밸런싱
-  const tmg = parseTiming(s, (mKR && !mUS) || st.portfolios.some((p) => p.kind === 'rank' ? p.rank.group.startsWith('KR') : p.assets.length && p.assets.every((a) => getUniverse()?.byKey.get(a.key)?.m === 'KR')));
+  const pf0 = st.portfolios[0];
+  const tmKR = pf0?.kind === 'rank' ? pf0.rank.group.startsWith('KR') : pf0?.assets?.length ? pf0.assets.every((a) => getUniverse()?.byKey.get(a.key)?.m === 'KR') : (mKR && !mUS);
+  const tmg = parseTiming(s, tmKR);
   if (tmg) {
     const note = tmg.note; delete tmg.note;
     st.portfolios.forEach((p) => { p.timing = structuredClone(tmg); if (tmg.kind === 'trigger' && !/(매달|매월|분기|매년|반기)/.test(s)) p.rebalance = p.kind === 'rank' ? p.rebalance : 'none'; });
@@ -437,12 +439,24 @@ export function parseCommand(text, prev = null) {
   delete st._curSaid;
 
   // ---- 벤치마크
-  if ((r = s.match(/(코스피|코스닥|S&P\s*500|에스앤피|나스닥|다우|SPY|QQQ|KODEX\s*200)\s*(?:와|과|랑|이랑|하고)?\s*(?:대비|비교|보다)/i))) {
-    const w = r[1].toLowerCase();
-    st.benchmark = /코스피|kodex/.test(w) ? '069500' : /코스닥/.test(w) ? '229200' : /나스닥|qqq/.test(w) ? 'QQQ' : /다우/.test(w) ? 'DIA' : 'SPY';
+  // '나스닥이랑 코스피200이랑 비교' → 비교 바로 앞에서부터 거꾸로, 지수 이름만으로 된 덩어리를 모음
+  const cmpSeg = (s.match(/([^,.?!]{0,40})(?:와|과|랑|이랑|하고)?\s*(?:대비|비교|보다)/) || [])[1] || '';
+  const IDXW = '(코스피\\s*200|코스피|코스닥\\s*150|코스닥|S&P\\s*500|에스앤피|나스닥\\s*100|나스닥|다우|SPY|QQQ|KODEX\\s*200|VT|전세계)';
+  const toks = cmpSeg.split(/\s*(?:이랑|랑|와|과|하고|및|그리고|,)\s+|\s*(?:이랑|랑|하고)\s*$/).map((x) => x.trim()).filter(Boolean);
+  const cmpWords = [];
+  for (let i = toks.length - 1; i >= 0; i--) {
+    const t = toks[i].replace(/(이랑|랑|와|과|하고)$/, '').trim();
+    if (new RegExp(`^${IDXW}$`, 'i').test(t)) { cmpWords.unshift(t.toLowerCase()); continue; }
+    if (i === toks.length - 1) { const m2 = t.match(new RegExp(`\\s${IDXW}$`, 'i')); if (m2) cmpWords.unshift(m2[1].toLowerCase()); }
+    break;
+  }
+  if (cmpWords.length) {
+    const toKey = (w) => (/코스피|kodex/.test(w) ? '069500' : /코스닥/.test(w) ? '229200' : /나스닥|qqq/.test(w) ? 'QQQ' : /다우/.test(w) ? 'DIA' : /vt|전세계/.test(w) ? 'VT' : 'SPY');
+    st.benchmarks = [...new Set(cmpWords.map(toKey))].slice(0, 6);
+    st.benchmark = st.benchmarks[0];
     said.add('benchmark');
     // 벤치마크로 쓴 이름이 포트폴리오 자산으로 잘못 들어갔으면 제거
-    st.portfolios.forEach((p) => { if (p.kind === 'static' && p.assets.length > 1) p.assets = p.assets.filter((a) => a.key !== st.benchmark || a.w); });
+    st.portfolios.forEach((p) => { if (p.kind === 'static' && p.assets.length > 1) p.assets = p.assets.filter((a) => !st.benchmarks.includes(a.key) || a.w); });
   } else if (!said.has('benchmark')) {
     const keys = st.portfolios.flatMap((p) => (p.kind === 'rank' ? [p.rank.group.startsWith('US') ? 'SPY' : '069500'] : p.assets.map((a) => a.key)));
     const kr = keys.filter((k) => isKoreaExposure(k)).length;
@@ -474,13 +488,13 @@ export function parseCommand(text, prev = null) {
     if (said.has('period')) merged.period = st.period;
     if (said.has('initial')) { merged.initial = st.initial; merged.currency = st.currency; }
     if (said.has('flow')) merged.flow = st.flow;
-    if (said.has('benchmark')) { merged.benchmark = st.benchmark; merged.benchmarks = st.benchmark ? [st.benchmark] : []; }
+    if (said.has('benchmark')) { merged.benchmark = st.benchmark; merged.benchmarks = st.benchmarks?.length ? st.benchmarks : (st.benchmark ? [st.benchmark] : []); }
     if (said.has('reinvest')) merged.reinvest = st.reinvest;
     if (said.has('fee')) merged.feeBp = st.feeBp;
     if (said.has('timing')) merged.portfolios.forEach((p) => { p.timing = structuredClone(st.portfolios[0].timing); });
     return { state: merged, report: { patch: true, said: [...said], defaulted: [], warnings: warnings.filter((w) => !w.startsWith('담을')), ignored } };
   }
-  st.benchmarks = st.benchmark ? [st.benchmark] : [];
+  if (!st.benchmarks?.length) st.benchmarks = st.benchmark ? [st.benchmark] : [];
   st.meta = { said: [...said], defaulted: [...new Set(defaulted)] };
   return { state: st, report: { patch: false, said: [...said], defaulted: [...new Set(defaulted)], warnings, ignored, empty } };
 }

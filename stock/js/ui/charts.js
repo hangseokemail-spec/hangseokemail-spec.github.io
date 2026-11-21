@@ -91,7 +91,7 @@ export function lineChart(elm, { series, yFmt = (v) => v, log = false, readout =
         name: s.name, type: 'line', data: s.data, showSymbol: false, symbolSize: 8, sampling: 'lttb', step: s.step || false,
         lineStyle: { width: s.width ?? 2, color: s.color, type: s.dashed ? 'dashed' : 'solid' }, itemStyle: { color: s.color },
         areaStyle: s.area ? { color: s.color, opacity: s.areaOpacity ?? 0.12 } : undefined,
-        emphasis: { disabled: true }, z: s.z ?? 2, tooltipHide: s.tooltipHide,
+        emphasis: s.focus ? { focus: 'series', lineStyle: { width: (s.width ?? 2) + 1 } } : { disabled: true }, blur: s.focus ? { lineStyle: { opacity: 0.15 }, areaStyle: { opacity: 0.03 } } : undefined, z: s.z ?? 2, tooltipHide: s.tooltipHide, triggerLineEvent: !!s.focus,
         markLine: s.markLine, markPoint: s.markPoint, markArea: s.markArea,
         endLabel: s.endLabel ? { show: !isMobile(), formatter: s.endLabel, color: css('--text-2'), fontSize: 12, distance: 8, ...(s.endRich ? { rich: { n: { color: css('--text-3'), fontSize: 11, lineHeight: 15 }, v: { color: s.color, fontSize: 15, fontWeight: 700, lineHeight: 19 }, c: { color: css('--text-2'), fontSize: 11, lineHeight: 15 } } } : {}) } : undefined,
         labelLayout: s.endRich ? { moveOverlap: 'shiftY' } : undefined,

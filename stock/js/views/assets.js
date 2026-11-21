@@ -104,7 +104,7 @@ async function renderSummary() {
     <div class="surface">
       <div class="as-head">
         <div class="cap">${filter.account ? esc(accName(H.accounts.find((a) => a.id === filter.account))) : filter.owner === 'all' ? '가족 전체' : `${esc(filter.owner)}님`} 총자산 · 환율 ${v.fx.now.toLocaleString('ko-KR')}원</div>
-        <div class="as-total">${m2(v.total)}</div>${hide() ? '' : `<div class="kr-read big">${esc(krRead(v.total))}${showUsd ? ` · ${esc(krReadUSD(v.total / v.fx.now))}` : ''}</div>`}
+        <div class="as-total">${m2(v.total)}</div>${hide() ? '' : `<div class="kr-read big">${esc(showUsd ? krReadUSD(v.total / v.fx.now, v.fx.now) : krRead(v.total, 'KRW', false))}</div>`}
         <div class="as-sub"><span class="${dirClass(v.day)}">오늘 ${hide() ? '•••' : fmtKRW(v.day, { plus: true })} (${fmtPct(v.dayPct, 2, true)}) ${arrow(v.day)}</span><span class="${dirClass(v.pl)}">전체 ${hide() ? '•••' : fmtKRW(v.pl, { plus: true })} (${fmtPct(v.plPct, 1, true)})</span></div>
         <div class="facts" style="margin:16px 0 0" id="divFacts"><div class="fact"><div class="lb">연간 예상 배당금</div><div class="v">…</div></div></div>
       </div>

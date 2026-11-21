@@ -74,46 +74,38 @@ export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// ------------------------------------------------------------------ 금액 한글 읽기: 20000000 → '2천만원', 123456789 → '약 1억 2,346만원'
-function manWords(n) { // 0~9999 → '2천5백' / '2,345' / '3백' / '천'
-  if (!n) return '';
-  if (n % 100 === 0) {
-    const ch = Math.floor(n / 1000), bk = Math.floor((n % 1000) / 100);
-    return `${ch ? `${ch === 1 ? '' : ch}천` : ''}${bk ? `${bk === 1 && !ch ? '' : bk}백` : ''}` || '';
-  }
-  return n.toLocaleString('ko-KR');
+// ------------------------------------------------------------------ 금액 한글 읽기(Fable 컨펌: 천의 배수만 '천', 나머지는 콤마 숫자)
+// 20000000 → '2천만원', 18000000 → '1,800만원', $12,500 → '1만 2,500 달러 · 약 1,800만원'
+const UNITS = ['', '만', '억', '조'];
+function groupWord(g, alone) { // 1~9999
+  if (g % 1000 === 0) return `${g === 1000 && alone ? '' : g / 1000}천`;
+  return g.toLocaleString('en-US');
 }
-/** 원·달러 금액을 한글 단위로 읽기. cur: 'KRW'|'USD' */
-export function krRead(x, cur = 'KRW') {
+/** exact=false면 위 두 묶음만 남기고(1만 이상) 버린 게 있으면 approx */
+export function koreanUnits(n, { exact = true } = {}) {
+  let v = Math.round(Math.abs(n));
+  if (v === 0) return { text: '0', approx: false };
+  const split = (x) => { const g = []; while (x > 0) { g.push(x % 10000); x = Math.floor(x / 10000); } return g; };
+  let groups = split(v), approx = false;
+  if (!exact && groups.length > 1) {
+    const keep = Math.max(1, groups.length - 2), unit = 10000 ** keep, r = Math.round(v / unit) * unit;
+    approx = r !== v; v = r; groups = split(v); for (let i = 0; i < keep; i++) groups[i] = 0;
+  }
+  const nz = groups.filter(Boolean).length, parts = [];
+  for (let i = groups.length - 1; i >= 0; i--) if (groups[i]) parts.push(groupWord(groups[i], nz === 1) + UNITS[i]);
+  return { text: (n < 0 ? MINUS : '') + parts.join(' '), approx };
+}
+export const readKRW = (n, o) => { const r = koreanUnits(n, o); return `${r.approx ? '약 ' : ''}${r.text}원`; };
+/** 환산값: 만원 단위, 유효숫자 3자리, 앞에 '약' */
+export function approxKRW(n) {
+  const a = Math.abs(n); let v = a >= 1e4 ? Math.round(a / 1e4) * 1e4 : Math.round(a);
+  const d = String(v).length; if (d > 3) { const p = 10 ** (d - 3); v = Math.round(v / p) * p; }
+  return `약 ${koreanUnits(n < 0 ? -v : v).text}원`;
+}
+export const readUSD = (n, fx) => `${koreanUnits(Math.round(n)).text} 달러${fx ? ` · ${approxKRW(n * fx)}` : ''}`;
+/** 앱 공통 이름(입력칸은 정확히, 표시는 exact:false) */
+export function krRead(x, cur = 'KRW', exact = true) {
   if (x == null || !isFinite(x)) return '';
-  const neg = x < 0, a = Math.abs(x);
-  const unit = cur === 'USD' ? ' 달러' : '원';
-  let txt, approx = false;
-  if (a < 1e4) {
-    const r = Math.round(a);
-    txt = r >= 1000 && r % 100 === 0 ? `${manWords(r)}` : r.toLocaleString('ko-KR');
-    approx = Math.abs(r - a) > 0.5;
-  } else if (a < 1e6) {
-    const man = Math.floor(a / 1e4), rest = Math.round(a - man * 1e4);
-    const r2 = rest >= 1000 ? Math.round(rest / 100) * 100 : rest;
-    approx = Math.abs(r2 - rest) > 0.5;
-    txt = `${man}만${r2 ? ` ${manWords(r2)}` : ''}`;
-  } else {
-    let man = Math.round(a / 1e4);
-    if (a >= 1e8) { const step = a >= 1e10 ? 1000 : a >= 1e9 ? 100 : 1; man = Math.round(a / 1e4 / step) * step; }
-    approx = Math.abs(man * 1e4 - a) > a * 0.002;
-    const jo = Math.floor(man / 1e8), eok = Math.floor((man % 1e8) / 1e4), m = man % 1e4;
-    const parts = [];
-    if (jo) parts.push(`${jo.toLocaleString('ko-KR')}조`);
-    if (eok) parts.push(`${eok.toLocaleString('ko-KR')}억`);
-    if (m) parts.push(`${manWords(m)}만`);
-    txt = parts.join(' ');
-    if (!m && !eok && jo) txt = `${jo.toLocaleString('ko-KR')}조`;
-  }
-  return `${approx ? '약 ' : ''}${neg ? '마이너스 ' : ''}${txt}${unit}`;
+  return cur === 'USD' ? `${koreanUnits(Math.round(x)).text} 달러` : readKRW(x, { exact });
 }
-/** 달러 금액 옆 설명: '1만 2천5백 달러 · 약 1,750만원' */
-export function krReadUSD(x, fx) {
-  const a = krRead(x, 'USD');
-  return fx ? `${a} · ${krRead(x * fx, 'KRW').replace(/^약 /, '')}` : a;
-}
+export function krReadUSD(x, fx) { return x == null || !isFinite(x) ? '' : readUSD(x, fx); }
