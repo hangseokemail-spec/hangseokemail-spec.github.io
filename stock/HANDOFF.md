@@ -1,6 +1,6 @@
 # Seok's Stock 세부 지침서 (작업 인수인계)
 
-기준: 2026-11-21 10:30 KST · 앱 마지막 기능 커밋 `40588bf`, 이 지침서는 그다음 커밋
+기준: 2026-11-21 11:10 KST · 계정 저장소 연결 커밋 `a3f5337`
 이 문서 하나만 읽으면 새 채팅(또는 PC의 Claude Code)에서 바로 이어 갈 수 있게 정리했다. 짧은 소개는 프로젝트 문서 `claude/seoks-stock-개요.md`에 있다.
 
 ---
@@ -68,54 +68,31 @@
 
 ### 1-2. 대기 중 — 사용자 차례
 
-#### ① 계정 저장소 배포 (가장 먼저)
+#### ① 계정 저장소 — 연결 끝 (2026-11-21 11:05)
 
-지금은 `stock/config/backend.json`이 `{ "url": "" }`다. 그래서 가입한 계정과 데이터가 **그 기기 브라우저에만** 저장된다. 구글 Apps Script 웹 앱을 배포하고 그 주소를 넣으면 어느 기기에서든 같은 계정·데이터를 쓴다.
+이제 어느 기기에서든 같은 계정·데이터를 쓴다. 웹 앱 주소는 `stock/config/backend.json`에 있고 라이브에도 반영됐다.
 
-**키트**
-- 위치: `stock/tools/apps_script/`
-- 내용: Code.gs, appsscript.json, appsscript.template.json, deploy.ps1, README.txt, .claspignore
-- 같은 파일이 채팅 첨부 `seoks-account-store-kit.zip`과 드라이브 '계정 저장소 배포 키트' 폴더에도 있다. zip에는 최상위 폴더 없이 이 6개 파일만 들어 있다.
-- `mock_server.mjs`는 로컬 시험용이다. `.claspignore`가 막아서 배포에는 안 올라간다.
+**확인한 것**
+- GET → "계정 저장소가 동작 중이에요 ✓", POST ping → `{"ok":true,"app":"seoks-stock"}`. 이번 컨테이너에서는 셸 curl이 script.google.com에 닿았다(WebFetch는 승인 대기에 걸릴 수 있으니 curl·Playwright로 확인).
+- Playwright 컨텍스트 두 개: A에서 가입하고 매달 적립 2,345,000 입력 → B(처음 보는 브라우저)에서 같은 계정으로 로그인 → 값과 '최근 기록'이 그대로 보였다.
 
-**마지막 시도에서 난 오류**(10:22)
-- 증상: PowerShell 위치가 `C:\Windows\System32\WindowsPowerShell\v1.0`인 채로 `powershell -ExecutionPolicy Bypass -File .\deploy.ps1`을 실행했다. 결과는 "-File 매개 변수에 대한 인수 '.\deploy.ps1'이(가) 없습니다".
-- 원인: 키트 폴더가 아닌 곳에서 실행했다. 스크립트 문제가 아니다.
+**사용자 차례로 남은 것**
+- 시험 계정 `sstestbf3c81` 지우기: 드라이브 'Seok's Stock 계정' 시트의 그 줄, 'Seok's Stock 개인 데이터(암호화)' 폴더의 `vault_66df75282e4fff9d.json`
+- 마스터 계정은 연결 뒤 처음 로그인할 때 원격에 자동 등록된다(`login`이 원격에서 'none'을 받으면 `register` 후 다시 `login`). 그 뒤로 마스터 데이터도 기기 사이에 동기화된다.
 
-**해결: 셋 중 하나**
-- A. 탐색기에서 압축 푼 폴더를 연다 → 빈 곳 우클릭 → [터미널에서 열기] → `powershell -ExecutionPolicy Bypass -File .\deploy.ps1`
-- B. 아무 위치에서 `powershell -ExecutionPolicy Bypass -File ` 까지 친다(끝에 띄어쓰기). deploy.ps1 파일을 PowerShell 창에 끌어다 놓고 Enter. 스크립트가 처음에 자기 폴더로 이동하므로(`Set-Location $PSScriptRoot`) 어디서 실행해도 된다.
-- C. 다운로드 폴더에 기본 이름으로 풀었다면 그대로 실행:
-  `powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\Downloads\seoks-account-store-kit\deploy.ps1"`
+**다시 배포할 때(Code.gs를 고쳤을 때)**
+- 사용자 PC의 키트 폴더(KIT_PATH)에 새 Code.gs를 넣고, 사용자에게 `배포하기.cmd` 두 번 클릭만 부탁한다. `webapp_url.txt`의 ID로 `clasp deploy -i`를 하므로 **주소가 바뀌지 않는다**.
+- Claude는 그 폴더를 `device_request_folder_access`로 열 수 있다(이번에 허용됨). 파일은 `device_commit_files`로 넣고, 결과는 `device_bash`로 읽는다. 사용자에게 주소나 오류 문구를 복사해 달라고 하지 않는다.
+  - `deploy_log.txt`: 단계별 기록(clasp push·deploy 출력 포함)
+  - `cmd_log.txt`: 실행 직전 PowerShell 문법 검사 결과, PS 버전, LanguageMode, node 유무
+  - `webapp_url.txt`: 배포 주소
+- 사용자 PC: Windows PowerShell 5.1.26100, Node v26, clasp 3.4.1(전역 설치됨), clasp 로그인 완료
 
-**스크립트 순서**
-1. Node 확인
-2. clasp 설치
-3. Apps Script API 켜기(https://script.google.com/home/usersettings)
-4. `clasp login`(hangseokemail@gmail.com)
-5. `clasp create` → `push` → `deploy`
-6. 웹 앱 주소를 클립보드에 복사하고 브라우저로 연다
-7. 권한 허용: '확인되지 않은 앱' 화면이면 고급 → 이동 → 허용
-8. "계정 저장소가 동작 중이에요 ✓" 화면이 나오면 끝
-
-**다음에 막힐 만한 곳과 대처**
-
-| 증상 | 대처 |
-|---|---|
-| "Node.js가 없어요" | 열리는 nodejs.org에서 LTS를 설치하고 PowerShell을 새로 연 뒤 다시 실행 |
-| User has not enabled the Apps Script API | 3단계 페이지에서 켜고 몇 분 기다렸다 다시 실행 |
-| clasp 명령 이름이나 옵션 오류(clasp 버전 차이, 이 스크립트는 실제 PC에서 아직 안 돌려 봄) | README.txt '방법 2(손으로)'로 진행: script.google.com 새 프로젝트 → Code.gs 붙여넣기 → `setup` 실행하고 권한 허용 → 배포 → 새 배포 → 웹 앱(실행: 나, 액세스: 모든 사용자) → 주소 복사 |
-| "배포 ID를 찾지 못했어요" | 화면 출력을 그대로 받아 `AKfyc…`로 시작하는 ID를 찾고 `https://script.google.com/macros/s/<ID>/exec`로 조립 |
-
-**주소를 받으면 Claude가 할 일**
-1. `stock/config/backend.json`을 `{ "url": "https://script.google.com/macros/s/…/exec" }`로 바꾼다.
-2. `git pull --rebase` → 커밋(`stock: 계정 저장소 연결`) → push
-3. 확인한다.
-   - (a) 주소를 WebFetch(GET)하면 "계정 저장소가 동작 중이에요 ✓" 화면이 나와야 한다. 셸의 curl은 허용 목록 때문에 script.google.com이 막힐 수 있다.
-   - (b) 라이브 앱 설정(마스터만 보임)의 [연결 확인] 버튼이 ping을 보낸다.
-   - (c) Playwright로 브라우저 컨텍스트 두 개를 띄운다. A에서 시험 계정을 가입하고 목표·노후에 값을 저장한다. B에서 같은 계정으로 로그인해 값이 보이면 동기화 성공이다.
-   - 시험 계정 줄은 사용자에게 드라이브 'Seok's Stock 계정' 시트에서 지워 달라고 알린다.
-4. 마스터 계정은 백엔드가 연결된 뒤 처음 로그인할 때 원격에 자동 등록된다. `login`이 원격에서 'none'을 받으면 `register` 후 다시 `login`한다. 그 뒤로는 마스터 데이터도 기기 사이에 동기화된다.
+**키트에서 배운 것**
+- `.ps1`은 **UTF-8 BOM이 꼭 하나만** 있어야 한다. 두 번이면 첫 줄 주석의 `'`가 문자열 시작으로 읽혀 "문자열에 ' 종결자가 없습니다"로 멈춘다. Write 도구는 원래 파일의 BOM을 유지하니 printf로 덧붙이지 않는다. 확인: `python3 -c "print(open('deploy.ps1','rb').read().count(b'\xef\xbb\xbf'))"` → 1
+- 네이티브 명령에 PowerShell의 `2>&1`을 쓰지 않는다. 5.1에서는 표준오류가 오류 레코드가 되어 멈출 수 있다. `cmd /c "… 2>&1"`로 합친다(`Run` 함수).
+- `clasp create`는 새 프로젝트의 기본 파일을 `Code.js`로 내려받는다. `.claspignore`가 Code.gs·appsscript.json만 올리므로 괜찮다. appsscript.json은 template으로 되돌린다.
+- 컨테이너에서는 PowerShell 문법 검사를 돌릴 수 없었다(pwsh 내려받기가 막힘). 그래서 `배포하기.cmd`가 사용자 PC에서 먼저 검사하고 `cmd_log.txt`에 남긴다.
 
 #### ② 기본 테마 결정 (답 대기)
 - 사용자는 "전체 디자인 색이 약간 더 밝았으면"이라고 했다. Fable은 이를 딤 다크(#1B2427)로 결정했다.
@@ -141,7 +118,6 @@
 - 라이트 테마 표 hover 대비
 
 ### 1-4. 다음 후보
-- 계정 저장소 연결 확인
 - GPT 색 안
 - 물가표
 - 표본 밖(out-of-sample) 검증
@@ -177,7 +153,7 @@
 | 목표로 전략 추천(종목이 아닌 규칙) | 전략 찾기 탭 | `core/finder.js`, `views/finder.js` |
 | 가입창(아이디·이메일·비번, DB 저장) | 가입·로그인 탭, 계정 저장소에 기억 | `auth.js` signup, `app.js` openLogin, `tools/apps_script/Code.gs` |
 | Claude 넘김이 실제로 동작하나? | 실제 API를 호출한다. 가짜 키로 401을 받아 경로가 열려 있음을 확인 | `core/ai.js` |
-| 계정 저장소 배포 | 키트 완성, 사용자 실행 대기(1-2 ①) | `tools/apps_script/` |
+| 계정 저장소 배포 | 두 번 클릭 키트로 배포, 연결·동기화 확인 끝(1-2 ①) | `tools/apps_script/`, `config/backend.json` |
 
 ---
 
@@ -208,11 +184,11 @@
 | `js/views/plan.js` | 목표·노후 화면 |
 | `js/views/assets.js` | 내 자산 화면 |
 | `config/accounts.json` | 마스터 계정(h, salt, iter 310000, ver, role master, name 석스). 해시만 들어 있다. |
-| `config/backend.json` | 계정 저장소 주소(지금은 비어 있음) |
+| `config/backend.json` | 계정 저장소 웹 앱 주소(2026-11-21 연결) |
 | `data/` | 시세 DB(8절) |
 | `tools/fetch_data.py`, `tools/universe_seed.py` | 시세 수집기, 종목 목록 |
 | `tools/make_account.mjs` | 계정 항목 만들기: `node tools/make_account.mjs <아이디> <비밀번호> [role] [이름]` → 출력을 accounts.json에 |
-| `tools/apps_script/` | 계정 저장소 코드와 배포 키트, `mock_server.mjs` |
+| `tools/apps_script/` | 계정 저장소 코드와 배포 키트(`배포하기.cmd` 두 번 클릭 → `deploy.ps1`), `mock_server.mjs` |
 | `tools/agents/gpt_color_brief.md` | GPT 색 제안 요청문과 받아들이는 규칙 |
 | `tools/design_check/` | 대비비·색각이상 검사(`verify.mjs`, `lib.mjs`, `evalset.mjs`) |
 | `tools/dev/` | 화면 확인용 Playwright 스크립트(`shot.py`, `flow.py`, `perf.py`) |
@@ -489,6 +465,8 @@
 **이 채팅(클라우드)의 한계**
 - 사용자 PowerShell을 직접 실행할 수 없다.
 - 기기 연결 도구가 있어도 다운로드 폴더 접근 요청이 자동으로 거절된 적이 있다. 우회하지 말고 첨부 파일이나 드라이브로 전달한다.
+- 2026-11-21에는 키트 폴더 접근이 허용됐다. `device_bash`는 사용자 PC 안의 리눅스 VM이라 PowerShell은 못 돌리지만, 폴더 파일을 읽고 쓸 수 있다.
+- 사용자가 화면 조작(computer use)을 긴급 중지한 적이 있다. 화면을 봐야 하면 먼저 묻는다. 대신 파일 기록으로 상태를 읽는다.
 
 **사용자 선호**
 - 문제를 지적할 때는 구체적인 대안을 함께 낸다.
@@ -520,6 +498,9 @@
 | `569cce4` | Fable 컨펌 반영(딤 다크·새 토큰, 금액 읽기 규칙, 낱말 통일, 형광펜, poolTop 50 등) |
 | `b250e72` | '…랑 비교' 꼬리의 지수를 비교 대상으로 |
 | `40588bf` | 계정 저장소 배포 키트, CLAUDE.md·AGENTS.md, GPT 색 브리프, 색 검사 스크립트 |
-| (다음) | 이 지침서(HANDOFF.md), `tools/dev`, `mock_server.mjs` |
+| `fc3b507` | 이 지침서(HANDOFF.md), `tools/dev`, `mock_server.mjs` |
+| `ae8e23b` | 배포 키트: 두 번 클릭 실행, clasp 3.4 확인, 주소·기록 파일 |
+| `ab0ef15` | 배포 스크립트 BOM 중복 수정, API 페이지 먼저 열기, 실행 전 문법 검사 |
+| `a3f5337` | 계정 저장소 연결(backend.json) |
 
 그 사이의 'stock: 시세 갱신 …'은 봇 커밋이다.
