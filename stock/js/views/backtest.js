@@ -154,6 +154,21 @@ async function interpret(text, { useAI = false, local = null } = {}) {
     window.dispatchEvent(new CustomEvent('assets:request-strategy', { detail: { cb: (assets) => { if (assets?.length) { state.portfolios[0].assets = assets; state.portfolios[0].name = '내 포트폴리오'; state.portfolios[0].rebalance = 'band'; state.portfolios[0].band = { abs: settings().bandAbs, rel: 0, cap: settings().capProduct }; } } } }));
   }
   const prev = structuredClone(st);
+  const undo = { label: '되돌리기', fn: () => { st = prev; active = Math.min(active, st.portfolios.length - 1); save(); renderSentence(); renderInput(); if (last) run(); } };
+  // 포트폴리오가 둘 이상이면: 문장은 지금 편집 중인 탭에만 넣고, 다른 포트폴리오와 조건은 그대로 둔다
+  if (!report.patch && !state.source && prev.portfolios.length > 1) {
+    const fresh = structuredClone(state);
+    const m = mergeIntoActive(prev, state, report);
+    st = m.next; active = m.slot;
+    applyUiDefaults(st, { ...report, said: st.meta.said });
+    save(); renderSentence(); renderInput();
+    showNotes({ ...report, defaulted: [] }, text);
+    const names = m.slots.map((i) => `P${i + 1}`).join('·');
+    addNote(`${names}에만 넣었어요. 다른 포트폴리오와 기간·금액 같은 조건은 그대로예요(문장에서 말한 조건만 바꿔요).${m.dropped ? ` 포트폴리오는 3개까지라 ${m.dropped}개는 넣지 못했어요.` : ''}`, '이 문장으로 전부 새로 만들기', () => { st = fresh; if (!st.meta) st.meta = { said: report.said, defaulted: report.defaulted }; applyUiDefaults(st, report); active = 0; save(); renderSentence(); renderInput(); $('#sentenceNotes', root).innerHTML = ''; run(); });
+    toast(`${names}에 넣었어요. 다른 포트폴리오는 그대로예요.`, undo);
+    if (!report.empty) run();
+    return;
+  }
   st = state;
   if (!st.meta) st.meta = { said: report.said, defaulted: report.defaulted };
   applyUiDefaults(st, report);
@@ -162,8 +177,66 @@ async function interpret(text, { useAI = false, local = null } = {}) {
   renderSentence();
   renderInput();
   showNotes(report, text);
-  if (report.patch) toast('말한 부분만 바꿨어요.', { label: '되돌리기', fn: () => { st = prev; save(); renderSentence(); renderInput(); } });
+  if (report.patch) toast('말한 부분만 바꿨어요.', undo);
+  // 포트폴리오가 하나였고 결과가 있었으면: 방금 것을 남겨 두고 나란히 비교할 수 있게
+  const was = prev.portfolios[0];
+  if (!report.patch && !state.source && last && prev.portfolios.length === 1 && st.portfolios.length < 3 && JSON.stringify(pfCore(was)) !== JSON.stringify(pfCore(st.portfolios[0]))) {
+    addNote(`앞의 포트폴리오(${pfText(was).slice(0, 40)})를 이 문장으로 바꿨어요.`, '앞의 것도 남겨서 같이 비교', () => {
+      const keep = { ...structuredClone(was), off: false };
+      st.portfolios = [keep, ...st.portfolios].slice(0, 3);
+      st.portfolios.forEach((p, i) => { if (/^포트폴리오 \d+$/.test(p.name)) p.name = `포트폴리오 ${i + 1}`; });
+      active = 1; save(); renderSentence(); renderInput(); $('#sentenceNotes', root).innerHTML = ''; run();
+    });
+  }
   if (!report.empty) run();
+}
+
+const pfCore = (p) => ({ kind: p.kind, assets: p.kind === 'static' ? p.assets : null, rank: p.kind === 'rank' ? p.rank : null });
+/** 해석 결과를 지금 편집 중인 포트폴리오 자리에 넣는다. 전역 조건은 문장에서 말한 것만 바꾼다. */
+function mergeIntoActive(prev, parsed, report) {
+  const said = report.said || [], defaulted = report.defaulted || [];
+  const next = structuredClone(prev);
+  const slot = Math.min(Math.max(0, active), next.portfolios.length - 1);
+  const old = next.portfolios[slot];
+  const incoming = parsed.portfolios.map((p, j) => {
+    const q = { ...structuredClone(p), off: false };
+    if (!said.includes('rebalance')) {
+      q.rebalance = old.rebalance; q.band = structuredClone(old.band || q.band);
+      if (old.rebMonth) q.rebMonth = old.rebMonth; else delete q.rebMonth;
+      if (q.kind === 'rank' && ['band', 'none'].includes(q.rebalance)) q.rebalance = 'M';
+      if (q.kind === 'static' && q.assets.length === 1) q.rebalance = 'none';
+    }
+    if (!said.includes('timing')) q.timing = old.timing ? structuredClone(old.timing) : null;
+    if (/^포트폴리오 \d+$/.test(q.name)) q.name = `포트폴리오 ${slot + j + 1}`;
+    return q;
+  });
+  next.portfolios.splice(slot, 1, incoming[0]);
+  const slots = [slot];
+  let dropped = 0;
+  for (const q of incoming.slice(1)) { if (next.portfolios.length < 3) { next.portfolios.push(q); slots.push(next.portfolios.length - 1); } else dropped++; }
+  next.portfolios.forEach((p, i) => { if (/^포트폴리오 \d+$/.test(p.name)) p.name = `포트폴리오 ${i + 1}`; });
+  if (said.includes('period')) next.period = parsed.period;
+  const curSaid = Array.isArray(report.defaulted) && !defaulted.includes('currency') && !report.ai;
+  if (said.includes('initial')) { next.initial = parsed.initial; next.currency = parsed.currency; }
+  else if (curSaid && parsed.currency !== next.currency) { next.currency = parsed.currency; next.initial = parsed.initial; }
+  if (said.includes('flow')) next.flow = parsed.flow;
+  if (said.includes('reinvest')) next.reinvest = parsed.reinvest;
+  if (said.includes('fee')) next.feeBp = parsed.feeBp;
+  if (said.includes('benchmark')) {
+    const add = parsed.benchmarks?.length ? parsed.benchmarks : (parsed.benchmark ? [parsed.benchmark] : []);
+    next.benchmarks = [...new Set([...benchList(prev), ...add])].slice(0, MAX_COMPARE);
+    next.benchmark = next.benchmarks.find((x) => !String(x).startsWith('hist:')) || null;
+  }
+  const pm = prev.meta || { said: [], defaulted: [] };
+  next.meta = { said: [...new Set([...(pm.said || []), ...said])], defaulted: (pm.defaulted || []).filter((x) => !said.includes(x)) };
+  return { next, slot, slots, dropped };
+}
+function addNote(msg, btnLabel, fn) {
+  const box = $('#sentenceNotes', root);
+  if (!box) return;
+  const n = el(`<div class="sentence-note info">${esc(msg)} ${btnLabel ? `<button class="btn small" type="button">${esc(btnLabel)}</button>` : ''}</div>`);
+  if (btnLabel) $('button', n).onclick = fn;
+  box.prepend(n);
 }
 
 function showNotes(report, text) {
@@ -216,8 +289,9 @@ function flowText() {
 function renderSentence() {
   const box = $('#sentence', root);
   if (!box) return;
-  const pfs = st.portfolios;
-  const pfPart = pfs.map((pf, i) => `${pfs.length > 1 ? `<span class="faint">P${i + 1}</span> ` : ''}${slot(pf.kind === 'rank' ? 'rank' : 'assets', pfText(pf), `pf-${i}`)}`).join(pfs.length > 1 ? ' 와 ' : '');
+  const inc = st.portfolios.map((pf, i) => ({ pf, i })).filter((x) => !x.pf.off);
+  const pfs = inc.length ? inc.map((x) => x.pf) : st.portfolios;
+  const pfPart = (inc.length ? inc : st.portfolios.map((pf, i) => ({ pf, i }))).map(({ pf, i }) => `${st.portfolios.length > 1 ? `<span class="faint">P${i + 1}</span> ` : ''}${slot(pf.kind === 'rank' ? 'rank' : 'assets', pfText(pf), `pf-${i}`)}`).join(pfs.length > 1 ? ' 와 ' : '');
   const pf0 = pfs[0];
   const weighting = pf0.kind === 'rank' ? ` 종목을 ${slot('weighting', { equal: '같은 비중', mcap: '시총 비중', invvol: '변동성 반비례 비중' }[pf0.rank.weighting])}으로 담고` : '을 담고';
   const reb = pfs.length > 1 && new Set(pfs.map((p) => p.rebalance)).size > 1 ? '포트폴리오별로' : rebText(pf0);
@@ -329,25 +403,45 @@ function readForms(r) {
 // ------------------------------------------------------------------ 비교 대상(여러 개): 지수·종목·지난 백테스트
 function openCompare() {
   let sel = benchList();
+  const pfOn = st.portfolios.map((p) => !p.off);
   const hist = histList();
+  const togglePf = (i) => { if (pfOn[i] && pfOn.filter(Boolean).length === 1) { toast('포트폴리오는 하나 이상 남겨야 해요.'); return; } pfOn[i] = !pfOn[i]; };
   const draw = (sh) => {
-    $('#cmpSel', sh.root).innerHTML = sel.length ? sel.map((b, i) => `<span class="cmp-chip"><i style="background:${compareColor(i)}"></i>${esc(benchName(b))}<button type="button" data-rm="${i}" aria-label="빼기">×</button></span>`).join('') : '<span class="cap">아직 없어요. 아래에서 고르세요(최대 6개).</span>';
+    const pfChips = st.portfolios.map((p, i) => (pfOn[i] ? `<span class="cmp-chip pf"><i style="background:${seriesColor(i)}"></i>P${i + 1} ${esc(pfLabel(p))}${st.portfolios.length > 1 ? `<button type="button" data-rmpf="${i}" aria-label="비교에서 빼기">×</button>` : ''}</span>` : '')).join('');
+    $('#cmpSel', sh.root).innerHTML = pfChips + (sel.length ? sel.map((b, i) => `<span class="cmp-chip"><i style="background:${compareColor(i)}"></i>${esc(benchName(b))}<button type="button" data-rm="${i}" aria-label="빼기">×</button></span>`).join('') : '<span class="cap">아래에서 지수·종목·지난 실행을 더할 수 있어요(최대 6개).</span>');
     $$('#cmpSel [data-rm]', sh.root).forEach((b) => { b.onclick = () => { sel.splice(+b.dataset.rm, 1); draw(sh); }; });
+    $$('#cmpSel [data-rmpf]', sh.root).forEach((b) => { b.onclick = () => { togglePf(+b.dataset.rmpf); draw(sh); }; });
     $$('[data-add]', sh.root).forEach((b) => b.setAttribute('aria-pressed', String(sel.includes(b.dataset.add))));
+    $$('[data-pf]', sh.root).forEach((b) => b.setAttribute('aria-pressed', String(pfOn[+b.dataset.pf])));
   };
+  const apply = () => { st.portfolios.forEach((p, i) => { p.off = !pfOn[i]; }); setBenchList(sel); };
   const sh = sheet(`<h3>무엇과 비교할까요?</h3>
     <div class="cmp-sel" id="cmpSel"></div>
+    <div class="section-title" style="margin-top:14px">내 포트폴리오</div>
+    <div class="chips" id="cmpPf">${st.portfolios.map((p, i) => `<button class="chip pf-chip" type="button" data-pf="${i}"><i style="background:${seriesColor(i)}"></i>P${i + 1} · ${esc(pfLabel(p))}</button>`).join('')}${st.portfolios.length < 3 ? '<button class="chip" type="button" id="cmpNewPf">+ 새 포트폴리오 만들어 비교</button>' : ''}</div>
+    <p class="cap">켜 둔 포트폴리오끼리 같은 기간·금액으로 나란히 비교해요. 포트폴리오는 3개까지예요.</p>
     <div class="seg" id="cmpTabs" style="margin:12px 0"><button type="button" data-t="idx" aria-pressed="true">지수·대표 ETF</button><button type="button" data-t="asset" aria-pressed="false">종목 검색</button><button type="button" data-t="hist" aria-pressed="false">지난 백테스트 ${hist.length ? `(${hist.length})` : ''}</button></div>
     <div data-p="idx"><div class="chips">${COMPARE_PRESETS.filter(([k]) => assetInfo(k)).map(([k, l]) => `<button class="chip" type="button" data-add="${k}">${esc(l)}</button>`).join('')}</div><p class="cap">배당을 포함한 ETF로 비교해요(지수 자체는 배당이 빠져 불리하게 보여요).</p></div>
     <div data-p="asset" hidden><div class="search"><input class="input" id="cmpSearch" placeholder="이름·티커·종목코드 (예: 애플, NVDA, 삼성전자)" autocomplete="off"><ul class="search-list" hidden></ul></div><p class="cap">개별 종목을 100% 들고 있었을 때와 비교해요.</p></div>
     <div data-p="hist" hidden>${hist.length ? `<div class="hist-pick">${hist.map((h) => `<button class="hist-row" type="button" data-add="hist:${h.id}"><b>${esc(h.short)}</b><span>${fmtPct(h.sum.cagr)} · 최대 낙폭 ${fmtPct(h.sum.mdd)} · ${esc(new Date(h.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span></button>`).join('')}</div><p class="cap">지난 실행의 규칙을 지금 기간에 맞춰 다시 계산해 비교해요.</p>` : '<p class="cap">아직 지난 실행이 없어요. 백테스트를 실행하면 최근 10개가 남아요.</p>'}</div>
     <div class="actions"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>적용</button></div>`, { wide: true });
   $$('#cmpTabs button', sh.root).forEach((b) => { b.onclick = () => { $$('#cmpTabs button', sh.root).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); $$('[data-p]', sh.root).forEach((p) => { p.hidden = p.dataset.p !== b.dataset.t; }); }; });
+  $$('[data-pf]', sh.root).forEach((b) => { b.onclick = () => { togglePf(+b.dataset.pf); draw(sh); }; });
+  $('#cmpNewPf', sh.root)?.addEventListener('click', () => { apply(); sh.close(); addPortfolio(); toast(`P${st.portfolios.length}를 만들었어요. 위 칸에 문장으로 쓰거나 왼쪽에서 종목을 고르세요. 다른 포트폴리오는 그대로 남아요.`); const ta = $('#askInput', root); ta?.scrollIntoView({ behavior: 'smooth', block: 'center' }); ta?.focus(); });
   $$('[data-add]', sh.root).forEach((b) => { b.onclick = () => { const k = b.dataset.add; const i = sel.indexOf(k); if (i >= 0) sel.splice(i, 1); else if (sel.length < MAX_COMPARE) { sel.push(k); if (sel.length === 5) toast('선이 많으면 구분이 어려워요. 그래프에서 선에 올리면 그 선만 진해져요.'); } else toast('비교 대상은 6개까지예요.'); draw(sh); }; });
   attachSearch($('#cmpSearch', sh.root), (it) => { if (!sel.includes(it.k) && sel.length < MAX_COMPARE) sel.push(it.k); draw(sh); });
   draw(sh);
   $('[data-close]', sh.root).onclick = sh.close;
-  $('[data-ok]', sh.root).onclick = () => { setBenchList(sel); sh.close(); renderSentence(); renderInput(); if (last) run(); else markStale(); };
+  $('[data-ok]', sh.root).onclick = () => { apply(); sh.close(); renderSentence(); renderInput(); if (last) run(); else markStale(); };
+}
+const pfLabel = (p) => (/^포트폴리오 \d+$/.test(p.name) ? pfText(p).slice(0, 34) : p.name);
+/** 새 포트폴리오 탭(지금 편집 중인 것을 복사) */
+function addPortfolio() {
+  const pf = st.portfolios[active] || st.portfolios[0];
+  const p = newPortfolio(`포트폴리오 ${st.portfolios.length + 1}`);
+  p.assets = structuredClone(pf.assets); p.kind = pf.kind; p.rank = structuredClone(pf.rank); p.rebalance = pf.rebalance; p.band = structuredClone(pf.band || p.band);
+  st.portfolios.push(p); active = st.portfolios.length - 1;
+  renderSentence(); renderInput(); markStale();
 }
 
 // ------------------------------------------------------------------ 매수·매도 타이밍 / 조건부 리밸런싱 편집
@@ -446,16 +540,17 @@ function renderInput() {
         <button class="chip" type="button" id="fee0" style="justify-self:start">비용 0 (포트폴리오 비주얼라이저와 맞추기)</button>
       </div>`;
   const cmp = `<div class="field"><span class="row" style="justify-content:space-between">비교 대상 <span class="cap">${bl.length}/${MAX_COMPARE}</span></span>
-      <div class="cmp-sel">${bl.map((b, i) => `<span class="cmp-chip"><i style="background:${compareColor(i)}"></i>${esc(benchName(b))}<button type="button" data-rmb="${i}" aria-label="빼기">×</button></span>`).join('')}<button class="chip" type="button" id="addCmp">+ 지수·종목·지난 실행</button></div></div>`;
+      <div class="cmp-sel">${st.portfolios.length > 1 ? st.portfolios.map((p, i) => (p.off ? '' : `<span class="cmp-chip pf"><i style="background:${seriesColor(i)}"></i>P${i + 1}</span>`)).join('') : ''}${bl.map((b, i) => `<span class="cmp-chip"><i style="background:${compareColor(i)}"></i>${esc(benchName(b))}<button type="button" data-rmb="${i}" aria-label="빼기">×</button></span>`).join('')}<button class="chip" type="button" id="addCmp">+ 포트폴리오·지수·종목·지난 실행</button></div></div>`;
   const tmBox = pf.timing?.kind ? `<div class="tm-chip"><span class="tm-ic" aria-hidden="true">⏱</span><span>${esc(timingText(pf.timing))}</span><button class="btn small ghost" type="button" id="editTm">바꾸기</button><button class="x-btn" type="button" id="rmTm" aria-label="타이밍 끄기">×</button></div>` : `<button class="btn small" type="button" id="editTm">+ 매수·매도 타이밍 / 조건부 리밸런싱</button>`;
   box.innerHTML = `
     <div class="bt-grid">
       <section class="bt-col col-pf">
         <div class="col-title">무엇을 담을까</div>
         <div class="pf-tabs" role="tablist">
-          ${st.portfolios.map((p, i) => `<button class="pf-tab" role="tab" type="button" data-i="${i}" aria-selected="${i === active}"><span class="dot" style="background:${seriesColor(i)}"></span>P${i + 1}</button>`).join('')}
+          ${st.portfolios.map((p, i) => `<button class="pf-tab${p.off ? ' off' : ''}" role="tab" type="button" data-i="${i}" aria-selected="${i === active}"${p.off ? ' title="지금 비교에서 빠져 있어요"' : ''}><span class="dot" style="background:${seriesColor(i)}"></span>P${i + 1}</button>`).join('')}
           ${st.portfolios.length < 3 ? '<button class="pf-tab" type="button" id="addPf">+ 포트폴리오</button>' : ''}
         </div>
+        ${pf.off ? '<div class="sentence-note info" style="margin:0 0 8px">이 포트폴리오는 지금 비교에서 빠져 있어요. <button class="btn small" type="button" id="pfBackIn">다시 넣기</button></div>' : ''}
         <input class="pf-name" id="pfName" value="${esc(pf.name)}" aria-label="포트폴리오 이름">
         <div class="seg" id="pfKind" style="margin-bottom:12px"><button type="button" data-v="static" aria-pressed="${pf.kind === 'static'}">직접 고르기</button><button type="button" data-v="rank" aria-pressed="${pf.kind === 'rank'}">규칙으로 고르기</button></div>
         <div id="pfEditor"></div>
@@ -476,7 +571,8 @@ function renderInput() {
   $('#rmTm', box)?.addEventListener('click', () => { pf.timing = null; renderSentence(); renderInput(); markStale(); });
   moneyHints(box);
   $$('.pf-tab[data-i]', box).forEach((b) => { b.onclick = () => { active = +b.dataset.i; renderInput(); }; });
-  $('#addPf', box)?.addEventListener('click', () => { const p = newPortfolio(`포트폴리오 ${st.portfolios.length + 1}`); p.assets = structuredClone(pf.assets); p.kind = pf.kind; p.rank = structuredClone(pf.rank); p.rebalance = pf.rebalance; st.portfolios.push(p); active = st.portfolios.length - 1; renderInput(); markStale(); });
+  $('#addPf', box)?.addEventListener('click', () => { addPortfolio(); toast(`P${st.portfolios.length}를 만들었어요. 위 칸에 문장으로 써도 다른 포트폴리오는 그대로 남아요.`); });
+  $('#pfBackIn', box)?.addEventListener('click', () => { pf.off = false; renderSentence(); renderInput(); markStale(); });
   $('#rmPf', box)?.addEventListener('click', () => { st.portfolios.splice(active, 1); active = 0; renderInput(); markStale(); });
   $('#pfName', box).onchange = (e) => { pf.name = e.target.value || `포트폴리오 ${active + 1}`; markStale(); };
   $$('#pfKind button', box).forEach((b) => { b.onclick = () => { pf.kind = b.dataset.v; if (pf.kind === 'rank' && ['band', 'none'].includes(pf.rebalance)) pf.rebalance = 'M'; renderInput(); markStale(); }; });
@@ -609,7 +705,9 @@ function toEngine(pf) {
 
 async function run() {
   const btn = $('#runBtn', root), prog = $('.progress', root);
-  for (const pf of st.portfolios) {
+  if (!st.portfolios.some((p) => !p.off)) st.portfolios.forEach((p) => { p.off = false; });
+  const inc = st.portfolios.map((p, i) => ({ p, i })).filter((x) => !x.p.off);
+  for (const { p: pf } of inc) {
     if (pf.kind === 'static' && !pf.assets.some((a) => +a.w > 0)) { toast(`${pf.name}에 종목을 넣어 주세요.`); return; }
     const missing = pf.kind === 'static' ? pf.assets.filter((a) => !assetInfo(a.key)) : [];
     if (missing.length) { toast(`${missing.map((a) => a.key).join(', ')}은 아직 DB에 없어요. 검색창에서 추가 요청할 수 있어요.`); return; }
@@ -618,8 +716,8 @@ async function run() {
   const setP = (d, t, label) => { btn.textContent = `시세 받는 중 ${d}/${t}${label ? ` · ${label}` : ''}`; prog.firstChild.style.width = `${(d / Math.max(1, t)) * 100}%`; };
   try {
     const runs = [];
-    for (let i = 0; i < st.portfolios.length; i++) {
-      const strat = toEngine(st.portfolios[i]);
+    for (const { p, i } of inc) {
+      const strat = toEngine(p);
       const res = await runBacktest(strat, { onProgress: (d, t) => setP(d, t, `P${i + 1}`) });
       runs.push({ i, strat, res });
     }
@@ -663,7 +761,7 @@ async function run() {
   }
 }
 function shortTitle(state = st) {
-  const pfs = state.portfolios;
+  const pfs = state.portfolios.filter((p) => !p.off).length ? state.portfolios.filter((p) => !p.off) : state.portfolios;
   const t = pfs.map((p) => (p.kind === 'rank' ? `${GROUPS[p.rank.group]} ${METRICS[p.rank.metric]} ${p.rank.from > 1 ? `${p.rank.from}~` : '상위 '}${p.rank.top}` : p.assets.slice(0, 3).map((a) => `${short(a.key)} ${trimNum(a.w)}`).join('·') + (p.assets.length > 3 ? '…' : ''))).join(' vs ');
   const tm = pfs.some((p) => p.timing?.kind) ? ' +타이밍' : '';
   return `${t}${tm} · ${periodText(state)}`.slice(0, 80);
