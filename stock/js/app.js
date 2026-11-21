@@ -1,16 +1,20 @@
 // 앱 시작: 데이터 목록 읽기, 탭 이동(해시), 설정, 데이터 상태
 import { $, $$, sheet, settings, saveSettings, applyTheme, toast, store } from './ui/dom.js';
-import { loadUniverse, loadMeta } from './core/data.js';
+import { loadUniverse, loadMeta, prefetch } from './core/data.js';
 import { initBacktest } from './views/backtest.js';
 import { initPlan } from './views/plan.js';
 import { initAssets } from './views/assets.js';
+import { initFinder } from './views/finder.js';
 import { esc } from './ui/format.js';
+import { login, restoreSession, logout, currentUser, exportVault, importVault } from './core/auth.js';
 
-const TABS = ['backtest', 'plan', 'assets'];
+const TABS = ['backtest', 'finder', 'plan', 'assets'];
+const PRIVATE_TABS = new Set(['plan', 'assets']);
 const inited = {};
 
 function show(tab) {
   if (!TABS.includes(tab)) tab = 'backtest';
+  if (PRIVATE_TABS.has(tab) && !currentUser()) { openLogin(true); tab = 'backtest'; if (location.hash.slice(1) !== 'backtest') history.replaceState(null, '', '#backtest'); }
   $$('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${tab}`));
   if (!inited[tab]) {
@@ -19,6 +23,7 @@ function show(tab) {
     if (tab === 'backtest') initBacktest(el);
     if (tab === 'plan') initPlan(el);
     if (tab === 'assets') initAssets(el);
+    if (tab === 'finder') initFinder(el);
   }
   window.dispatchEvent(new CustomEvent('tabshown', { detail: tab }));
   window.scrollTo({ top: 0 });
@@ -26,7 +31,52 @@ function show(tab) {
   setTimeout(() => window.dispatchEvent(new Event('resize')), 30);
 }
 
+// ------------------------------------------------------------------ 로그인
+function openLogin(fromLocked = false) {
+  if (document.querySelector('.login-screen')) return;
+  const box = document.createElement('div');
+  box.className = 'login-screen';
+  box.innerHTML = `<form class="login-card" autocomplete="on">
+      <div class="login-brand"><span class="logo"></span>Seok's Stock</div>
+      <h1>${fromLocked ? '목표·노후와 내 자산은 로그인해야 볼 수 있어요' : '로그인'}</h1>
+      <p class="cap">개인 계획과 자산은 계정별로 암호화해서 이 기기에 저장해요.</p>
+      <label class="field">아이디<input class="input" name="username" id="lg_id" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+      <label class="field">비밀번호<input class="input" name="password" id="lg_pw" type="password" autocomplete="current-password" required></label>
+      <label class="toggle"><input type="checkbox" id="lg_keep" checked> 이 기기에서 로그인 유지</label>
+      <p class="login-err" id="lg_err" role="alert"></p>
+      <button class="btn primary big" type="submit" id="lg_go">들어가기</button>
+      <button class="btn ghost" type="button" id="lg_guest">로그인 없이 백테스트·전략 찾기만 보기</button>
+    </form>`;
+  document.body.appendChild(box);
+  document.body.classList.add('locked');
+  setTimeout(() => $('#lg_id', box).focus(), 30);
+  $('#lg_guest', box).onclick = () => { box.remove(); document.body.classList.remove('locked'); document.body.classList.add('guest'); if (!inited.backtest) show(location.hash.slice(1) || 'backtest'); };
+  $('form', box).onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $('#lg_go', box); btn.disabled = true; btn.textContent = '확인 중…'; $('#lg_err', box).textContent = '';
+    const r = await login($('#lg_id', box).value, $('#lg_pw', box).value, $('#lg_keep', box).checked);
+    if (!r.ok) { $('#lg_err', box).textContent = r.error; btn.disabled = false; btn.textContent = '들어가기'; $('#lg_pw', box).select(); return; }
+    location.reload(); // 계정 데이터로 처음부터 그림
+  };
+}
+function renderAccount() {
+  const u = currentUser();
+  const b = $('#accountBtn');
+  if (!b) return;
+  b.textContent = u ? u.name : '로그인';
+  b.onclick = () => {
+    if (!u) { openLogin(); return; }
+    const s = sheet(`<h3>${esc(u.name)}${u.role === 'master' ? ' <span class="status-pill">마스터</span>' : ''}</h3>
+      <p class="cap">목표·노후 계획, 내 자산, 백테스트 기록은 이 계정 키로 암호화돼 이 기기에만 저장돼요. 다른 기기로 옮길 때는 설정의 ‘암호화 백업’을 쓰세요.</p>
+      <div class="actions"><button class="btn" type="button" data-close>닫기</button><button class="btn primary" type="button" id="lo">로그아웃</button></div>`);
+    $('[data-close]', s.root).onclick = s.close;
+    $('#lo', s.root).onclick = () => logout(true);
+  };
+}
+
 async function main() {
+  const u = await restoreSession();
+  if (!u) document.body.classList.add('guest');
   applyTheme();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme());
   $$('[data-tab]').forEach((b) => b.addEventListener('click', () => { location.hash = `#${b.dataset.tab}`; }));
@@ -47,8 +97,11 @@ async function main() {
     toast('시세 목록을 불러오지 못했어요. 새로 고침해 주세요.');
     console.error(e);
   }
+  renderAccount();
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
+  if (!u) openLogin(PRIVATE_TABS.has(location.hash.slice(1)));
   show(location.hash.slice(1) || 'backtest');
+  prefetch(['SPY', 'QQQ', 'FX_USDKRW', 'BIL', 'IEF', '069500', 'SCHD', 'VOO']);
 }
 
 async function openDataStatus() {
@@ -57,7 +110,7 @@ async function openDataStatus() {
   const u = await loadUniverse();
   const by = (m, t) => u.items.filter((x) => x.m === m && (!t || x.t === t)).length;
   const s = sheet(`<h3>시세 데이터베이스</h3>
-    <p>미국 주식 ${by('US', 'stock')} · 미국 ETF ${by('US', 'etf')} · 국내 주식 ${by('KR', 'stock')} · 국내 ETF ${by('KR', 'etf')} · 지수·환율 ${by('IDX')}종목, 2000년부터 일별 시세와 배당 이력.</p>
+    <p>미국 주식 ${by('US', 'stock')} · 미국 ETF ${by('US', 'etf')} · 국내 주식 ${by('KR', 'stock')} · 국내 ETF ${by('KR', 'etf')} · 지수·환율 ${by('IDX')}종목, 미국은 1985년·국내는 2000년부터(상장 이후) 일별 시세와 배당 이력.</p>
     <p class="cap">마지막 갱신: ${esc(meta.updated ? new Date(meta.updated).toLocaleString('ko-KR') : '–')}${meta.incremental != null ? ` · 증분 ${meta.incremental} · 전체 ${meta.full}` : ''}${meta.failed?.length ? ` · 실패 ${meta.failed.length}종목(${esc(meta.failed.slice(0, 5).map((x) => x[0]).join(', '))})` : ''}</p>
     <p class="cap">매일 미국장·국내장 마감 뒤 자동으로 새 날짜만 붙이고, 일요일에 전체를 다시 점검해요. 목록에 없는 종목은 종목 검색창에서 ‘추가 요청’을 누르면 몇 분 안에 들어와요.</p>
     <div class="actions"><button class="btn" type="button" data-close>닫기</button></div>`);
@@ -78,9 +131,9 @@ function openSettings() {
       <label class="field">상품 상한<div class="input-unit"><input class="input num" id="s_cap2" value="${st.capProduct}"><span>%</span></div></label>
     </div>
     <label class="field">Claude API 키 (선택)<input class="input" id="s_key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(st.apiKey)}"></label>
-    <p class="cap">키는 이 기기 브라우저에만 저장되고 Anthropic으로만 전송돼요. 백업 파일에는 넣지 않아요. 공용 컴퓨터에서는 넣지 마세요. 키가 있으면 복잡한 문장 해석과 계좌 캡처 인식에 Claude를 쓰고, 없으면 기본 해석기와 기기 안 글자 인식(OCR)으로 동작해요.</p>
+    <p class="cap">키는 계정 저장소에 암호화돼 이 기기에만 저장되고 Anthropic으로만 전송돼요. 공용 컴퓨터에서는 넣지 마세요. 키가 있으면 복잡한 문장 해석과 계좌 캡처 인식에 Claude를 쓰고, 없으면 기본 해석기와 기기 안 글자 인식(OCR)으로 동작해요.</p>
     <label class="field">모델<select class="input" id="s_model">${['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'].map((m) => `<option ${st.model === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
-    <div class="row"><button class="btn small" type="button" id="s_export">전체 백업 내보내기</button><label class="btn small">백업 가져오기<input type="file" accept="application/json" id="s_import" hidden></label></div>
+    <div class="row"><button class="btn small" type="button" id="s_export">암호화 백업 내보내기</button><label class="btn small">백업 가져오기<input type="file" accept="application/json" id="s_import" hidden></label></div><p class="cap">암호화 백업은 같은 아이디·비밀번호로 로그인한 기기에서만 풀려요. 휴대폰과 PC가 같은 데이터를 쓰려면 이 파일로 옮기세요.</p>
   </div><div class="actions"><button class="btn" type="button" data-close>닫기</button><button class="btn primary" type="button" data-ok>저장</button></div>`);
   $$('.seg button', s.root).forEach((b) => b.addEventListener('click', () => { $$('button', b.parentElement).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }));
   const pressed = (id) => $(`#${id} button[aria-pressed="true"]`, s.root)?.dataset.v;
@@ -89,15 +142,17 @@ function openSettings() {
     saveSettings({ theme: pressed('s_theme'), updown: pressed('s_updown'), currency: pressed('s_cur'), altStyle: pressed('s_alt'), bandAbs: +$('#s_band', s.root).value || 3, capSingle: +$('#s_cap1', s.root).value || 20, capProduct: +$('#s_cap2', s.root).value || 25, apiKey: $('#s_key', s.root).value.trim(), model: $('#s_model', s.root).value, feeBp: Math.round((+$('#s_fee', s.root).value || 0) * 100) });
     s.close(); toast('설정을 저장했어요.');
   };
-  $('#s_export', s.root).onclick = () => {
-    const data = { app: 'seoks-stock', version: 1, at: new Date().toISOString(), holdings: store('ss.holdings'), plans: store('ss.plans'), bt: store('ss.bt'), snapshots: store('ss.snapshots'), settings: { ...settings(), apiKey: '' } };
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' })); a.download = `seoks-stock-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  $('#s_export', s.root).onclick = async () => {
+    if (!currentUser()) { toast('로그인하면 계정 데이터를 암호화 백업할 수 있어요.'); return; }
+    const data = await exportVault();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' })); a.download = `seoks-stock-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   };
   $('#s_import', s.root).onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
     try {
       const d = JSON.parse(await f.text());
       if (d.app !== 'seoks-stock') throw new Error('Seok\'s Stock 백업 파일이 아니에요');
+      if (d.kind === 'vault') { await importVault(d); toast('암호화 백업을 가져왔어요. 화면을 새로 고칠게요.'); setTimeout(() => location.reload(), 800); return; }
       for (const k of ['holdings', 'plans', 'bt', 'snapshots']) if (d[k]) store(`ss.${k}`, d[k]);
       if (d.settings) saveSettings({ ...d.settings, apiKey: settings().apiKey });
       toast('백업을 가져왔어요. 화면을 새로 고칠게요.'); setTimeout(() => location.reload(), 800);

@@ -41,9 +41,13 @@ function resolveKey(x) {
 /** 자연어 → 백테스트 상태 */
 export async function aiParse(text) {
   const system = `너는 한국어 백테스트 조건을 JSON으로 바꾸는 해석기다. 반드시 JSON 하나만 출력한다.
-스키마: {"portfolios":[{"name":string,"kind":"static"|"rank","assets":[{"key":"미국 티커 또는 국내 6자리 코드","w":비중%}],"rank":{"group":"US_STOCK"|"KR_STOCK"|"US_ETF"|"KR_ETF","metric":"mcap"|"mom"|"lowvol","from":1,"top":N,"lookback":개월,"skip":개월,"weighting":"equal"|"mcap"|"invvol","maxW":null|%,"exclude":[]},"rebalance":"none"|"M"|"Q"|"S"|"A"|"band","band":{"abs":%p,"rel":%,"cap":%}}],
+스키마: {"portfolios":[{"name":string,"kind":"static"|"rank","assets":[{"key":"미국 티커 또는 국내 6자리 코드","w":비중%}],"rank":{"group":"US_STOCK"|"KR_STOCK"|"US_ETF"|"KR_ETF","metric":"mcap"|"mom"|"lowvol","from":1,"top":N,"lookback":개월,"skip":개월,"weighting":"equal"|"mcap"|"invvol","maxW":null|%,"exclude":[]},"rebalance":"none"|"M"|"Q"|"S"|"A"|"band","band":{"abs":%p,"rel":%,"cap":%},
+"timing":null|{"kind":"switch"|"trigger"|"scale","signal":"SPY"|"QQQ"|"069500"|"self"|"each"|티커,"sell":규칙|null,"buy":규칙|null,"rule":규칙(trigger일 때),"to":"BIL"|"SHY"|"IEF"|"TLT"|"CASH"|"153130"|"148070","check":"D"|"M","startIn":true|false,"cooldown":거래일,"targetVol":%}}],
+"규칙" 형식: {"type":"ma","n":숫자,"unit":"d"|"m","op":"below"|"above"} | {"type":"cross","fast":50,"slow":200,"op":"dead"|"golden"} | {"type":"ret","n":개월,"unit":"m","op":"below"|"above","th":0|"cash"} | {"type":"dd","th":-15,"op":"below"|"above"} | {"type":"rsi","n":14,"op":"below"|"above","th":30} | {"type":"vix","op":"above"|"below","th":30} | {"type":"bb","n":20,"k":2,"op":"belowLower"|"aboveUpper"} | {"type":"macd","op":"bear"|"bull"} | {"type":"trail","th":-10}
+rank에는 "excludeCats":["lev","inv","bond","cash","cmdty","single","cc"](레버리지·인버스·채권·현금성·원자재·단일종목·커버드콜 제외)와 "universe":[후보로만 쓸 티커] 도 쓸 수 있다.
 "period":{"preset":"Ny"|"Nm"|"max"|null,"start":"YYYY-MM"|null,"end":"YYYY-MM"|null},"currency":"KRW"|"USD","initial":숫자,"flow":{"type":"none"|"contribute"|"withdraw"|"withdrawPct","amount":숫자,"pct":숫자,"freq":"M"|"Q"|"A","growth":%},"reinvest":true|false,"feeBp":숫자,"benchmark":"SPY"|"QQQ"|"069500"|티커|null,
 "said":[사용자가 직접 말한 항목: "period","assets","rank","rebalance","initial","currency","flow","benchmark"],"defaulted":[기본값으로 채운 항목],"warnings":[못 하는 요청이 있으면 한국어로 짧게]}
+비교 대상은 "benchmarks":[티커 최대 6개]로 준다.
 규칙: 최대 3개 포트폴리오. 비중 합은 100. 순위 전략의 리밸런싱은 M/Q/S/A만. 기간을 말하지 않으면 {"preset":"10y"}. 시작 금액을 말하지 않으면 원화 10000000 또는 달러 10000. 벤치마크는 미국 자산 위주면 SPY, 국내 위주면 069500.`;
   const out = extractJson(await call({ system, content: text }));
   const st = { ...defaultBtState(), ...out };
@@ -54,6 +58,8 @@ export async function aiParse(text) {
   });
   if (!st.portfolios.length) st.portfolios = [newPortfolio('포트폴리오 1')];
   st.benchmark = out.benchmark ? resolveKey(out.benchmark) : null;
+  st.benchmarks = (out.benchmarks || (out.benchmark ? [out.benchmark] : [])).map(resolveKey).filter(Boolean).slice(0, 6);
+  if (!st.benchmark && st.benchmarks.length) st.benchmark = st.benchmarks[0];
   st.meta = { said: out.said || [], defaulted: out.defaulted || [], ai: true };
   const empty = !st.portfolios.some((p) => p.kind === 'rank' || p.assets.length);
   return { state: st, report: { said: st.meta.said, defaulted: st.meta.defaulted, warnings: out.warnings || [], empty, ai: true } };

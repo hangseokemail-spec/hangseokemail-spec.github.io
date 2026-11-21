@@ -30,7 +30,8 @@ DATA = os.path.join(ROOT, "data")
 PX = os.path.join(DATA, "px")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
-START_TS = 946684800  # 2000-01-01
+START_TS = 946684800  # 2000-01-01 (국내)
+START_US_TS = 473385600  # 1985-01-01 (미국 주식·ETF·펀드·지수: 더 긴 백테스트용)
 S = requests.Session()
 S.headers.update({"User-Agent": UA, "Accept": "application/json,text/plain,*/*"})
 
@@ -409,7 +410,7 @@ def load_existing(key):
         return None
     dates, c, _dv = decode_px(obj)
     return {"dates": [ymd(d) for d in dates], "close": list(c), "adj": [None] * len(c),
-            "divs": [list(x) for x in obj.get("dv", [])], "sh": obj.get("sh") or [], "src": obj.get("src", "yahoo")}
+            "divs": [list(x) for x in obj.get("dv", [])], "sh": obj.get("sh") or [], "src": obj.get("src", "yahoo"), "p1": obj.get("p1", START_TS)}
 
 
 def merge_incremental(old, new):
@@ -445,11 +446,40 @@ def merge_incremental(old, new):
     return out
 
 
+def start_of(u):
+    return START_US_TS if u["m"] in ("US", "IDX") else START_TS
+
+
+def fred_prepend(raw, series="DEXKOUS"):
+    """야후 KRW=X는 2003년 12월부터라, 그 전은 미 연준(FRED) 일별 원/달러 환율로 앞에 붙임."""
+    try:
+        r = S.get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}", timeout=30)
+        r.raise_for_status()
+        first = raw["dates"][0]
+        pre_d, pre_c = [], []
+        for line in r.text.splitlines()[1:]:
+            d, _, v = line.partition(",")
+            try:
+                dd = int(d.replace("-", "")); vv = float(v)
+            except ValueError:
+                continue
+            if dd < first and dd >= 19850101 and vv > 0:
+                pre_d.append(dd); pre_c.append(vv)
+        if pre_d:
+            raw["dates"] = pre_d + raw["dates"]
+            raw["close"] = pre_c + raw["close"]
+            raw["adj"] = [None] * len(pre_d) + raw["adj"]
+            log(f"  FX: FRED {series} {len(pre_d)}일 앞에 붙임({pre_d[0]}~)")
+    except Exception as e:  # noqa: BLE001
+        log(f"  FX: FRED 실패 {e}")
+    return raw
+
+
 def fetch_full(u):
     key = u["k"]
     src = "yahoo"
     try:
-        raw = yahoo_chart(u["y"])
+        raw = yahoo_chart(u["y"], start_of(u))
         if u["m"] == "KR" and len(raw["dates"]) < 30:
             raise RuntimeError("too short")
     except Exception as e:  # noqa: BLE001
@@ -463,12 +493,16 @@ def fetch_full(u):
             raw = yahoo_chart(u["y"])
         else:
             raise
+    if key == "FX_USDKRW":
+        raw = fred_prepend(raw)
     return raw, src
 
 
 def fetch_one(u):
     key = u["k"]
     old = None if FULL else load_existing(key)
+    if old is not None and old.get("p1", START_TS) > start_of(u):
+        old = None  # 시작일을 앞당겼으면 한 번 전체로 다시 받음
     mode = "full"
     raw, src = None, "yahoo"
     if old and old["dates"]:
@@ -504,6 +538,8 @@ def fetch_one(u):
                 shares = (shares or []) + [[today, cur]]
     chk = tr_check(raw) if (src == "yahoo" and mode == "full") else None
     obj = encode(key, raw, shares, src)
+    if start_of(u) != START_TS:
+        obj["p1"] = start_of(u)
     changed = write_json(os.path.join(PX, f"{key}.json"), obj)
     c = raw["close"]
     meta = {

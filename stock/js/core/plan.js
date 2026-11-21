@@ -8,8 +8,10 @@ export function monthlyRate(r, comp = 'effective') {
 export function realRate(n, i) { return (1 + n) / (1 + i) - 1; }
 
 /** segments: [{fromYear, toYear, rate}] (rate: 비율). 마지막 구간은 끝없이 이어짐 */
+const _sorted = new WeakMap();
 export function rateForYear(segs, y, delta = 0) {
-  const s = [...segs].sort((a, b) => a.fromYear - b.fromYear);
+  let s = _sorted.get(segs);
+  if (!s) { s = [...segs].sort((a, b) => a.fromYear - b.fromYear); _sorted.set(segs, s); }
   for (const g of s) if (g.fromYear <= y && (g.toYear == null || y <= g.toYear)) return g.rate + delta;
   const last = s[s.length - 1];
   if (y > (last.toYear ?? Infinity) || y > last.fromYear) return last.rate + delta;
@@ -217,6 +219,8 @@ export function computePlan(st) {
   };
   const lp = lifePlan(acc, ret);
   const gap = lp.fvAtRetire - lp.needAtRetire;
+  // 역산용 내부 호출: 대안·표 계산을 건너뜀(중첩 역산이 수십 초 걸리던 원인)
+  if (st._noAlt) return { mode: 'retire', lp, gap };
   const toToday = (v, m) => v / Math.pow(1 + infl, m / 12);
   // 역산(대안)
   const alts = [];

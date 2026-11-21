@@ -1,6 +1,6 @@
 // 탭3 내 자산 — 현황(총자산·구성·배당·지도·계좌) · 종목 · 위험 · 기록, 캡처 인식
-import { $, $$, el, store, toast, sheet, settings, saveSettings } from '../ui/dom.js';
-import { fmtKRW, fmtKRWShort, fmtUSD, fmtPct, fmtPp, fmtPrice, esc, dirClass, arrow } from '../ui/format.js';
+import { $, $$, el, store, toast, sheet, settings, saveSettings, moneyHints } from '../ui/dom.js';
+import { fmtKRW, fmtKRWShort, fmtUSD, fmtPct, fmtPp, fmtPrice, esc, dirClass, arrow, krRead, krReadUSD } from '../ui/format.js';
 import { donut, treemap, barChart, lineChart, catColor, css, isMobile } from '../ui/charts.js';
 import { searchAssets, assetInfo } from '../core/data.js';
 import { ACCOUNT_TYPES, typeLabel, loadHoldings, saveHoldings, uid, ensureKrAll, matchName, infoOf, valuate, mergeByKey, dividendForecast, riskCheck, rebalanceOrders, toBacktestAssets, fxNow, exposure } from '../core/holdings.js';
@@ -104,7 +104,7 @@ async function renderSummary() {
     <div class="surface">
       <div class="as-head">
         <div class="cap">${filter.account ? esc(accName(H.accounts.find((a) => a.id === filter.account))) : filter.owner === 'all' ? '가족 전체' : `${esc(filter.owner)}님`} 총자산 · 환율 ${v.fx.now.toLocaleString('ko-KR')}원</div>
-        <div class="as-total">${m2(v.total)}</div>
+        <div class="as-total">${m2(v.total)}</div>${hide() ? '' : `<div class="kr-read big">${esc(krRead(v.total))}${showUsd ? ` · ${esc(krReadUSD(v.total / v.fx.now))}` : ''}</div>`}
         <div class="as-sub"><span class="${dirClass(v.day)}">오늘 ${hide() ? '•••' : fmtKRW(v.day, { plus: true })} (${fmtPct(v.dayPct, 2, true)}) ${arrow(v.day)}</span><span class="${dirClass(v.pl)}">전체 ${hide() ? '•••' : fmtKRW(v.pl, { plus: true })} (${fmtPct(v.plPct, 1, true)})</span></div>
         <div class="facts" style="margin:16px 0 0" id="divFacts"><div class="fact"><div class="lb">연간 예상 배당금</div><div class="v">…</div></div></div>
       </div>
@@ -338,7 +338,7 @@ function renderHistory() {
   if (snaps.length >= 2) lineChart($('#hChart', B), { series: [{ name: '총자산', color: css('--series-1'), area: true, data: snaps.map((s) => [Date.parse(s.date), val(s)]) }], yFmt: (x, ax) => (hide() ? '•' : ax ? fmtKRWShort(x) : fmtKRW(x)), readout: isMobile() ? $('#hReadout', B) : null });
   $('#snapNow', B).onclick = () => { takeSnapshot(true); renderHistory(); };
   $('#snapAdd', B).onclick = () => {
-    const s = sheet(`<h3>지난 기록 넣기</h3><div class="stack"><label class="field">날짜<input class="input" type="date" id="sa_d"></label><label class="field">총자산<div class="input-unit"><input class="input num" id="sa_v" inputmode="numeric"><span>원</span></div></label><p class="cap">모아보기 합계로 저장돼요.</p></div><div class="actions"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>넣기</button></div>`);
+    const s = sheet(`<h3>지난 기록 넣기</h3><div class="stack"><label class="field">날짜<input class="input" type="date" id="sa_d"></label><label class="field">총자산<div class="input-unit"><input class="input num" id="sa_v" inputmode="numeric" data-money="KRW"><span>원</span></div></label><p class="cap">모아보기 합계로 저장돼요.</p></div><div class="actions"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>넣기</button></div>`);
     $('[data-close]', s.root).onclick = s.close;
     $('[data-ok]', s.root).onclick = () => { const d = $('#sa_d', s.root).value, v = +$('#sa_v', s.root).value.replace(/[^\d]/g, ''); if (!d || !v) return; const arr = store('ss.snapshots') || []; arr.push({ date: d, total: v, byOwner: {}, byAccount: {}, manual: true }); store('ss.snapshots', arr); window.dispatchEvent(new Event('snapshots:changed')); s.close(); renderHistory(); };
   };
@@ -353,7 +353,7 @@ function openAccount(acc = null, onDone = null) {
     <div class="grid2"><label class="field">소유자<input class="input" id="a_owner" value="${esc(a.owner || '나')}" list="ownerList"><datalist id="ownerList">${['나', '배우자', '자녀1', '자녀2', ...owners()].map((o) => `<option>${esc(o)}</option>`).join('')}</datalist></label>
     <label class="field">계좌 유형<select class="input" id="a_type">${ACCOUNT_TYPES.map(([k, l]) => `<option value="${k}" ${a.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
     <div class="grid2"><label class="field">증권사(선택)<input class="input" id="a_broker" value="${esc(a.broker || '')}"></label><label class="field">별칭(선택)<input class="input" id="a_name" value="${esc(a.name || '')}"></label></div>
-    <div class="grid2"><label class="field">원화 현금<div class="input-unit"><input class="input num" id="a_krw" value="${a.cash?.KRW || ''}" inputmode="numeric"><span>원</span></div></label><label class="field">달러 현금<div class="input-unit"><input class="input num" id="a_usd" value="${a.cash?.USD || ''}" inputmode="decimal"><span>$</span></div></label></div>
+    <div class="grid2"><label class="field">원화 현금<div class="input-unit"><input class="input num" id="a_krw" value="${a.cash?.KRW || ''}" inputmode="numeric" data-money="KRW"><span>원</span></div></label><label class="field">달러 현금<div class="input-unit"><input class="input num" id="a_usd" value="${a.cash?.USD || ''}" inputmode="decimal" data-money="USD"><span>$</span></div></label></div>
   </div><div class="actions">${acc ? '<button class="btn ghost" type="button" data-del>계좌 삭제</button>' : ''}<button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>저장</button></div>`);
   $('[data-close]', s.root).onclick = s.close;
   $('[data-del]', s.root)?.addEventListener('click', () => { if (!confirm('이 계좌와 안의 종목을 모두 지울까요?')) return; H.accounts = H.accounts.filter((x) => x.id !== a.id); H.holdings = H.holdings.filter((h) => h.account !== a.id); save(); s.close(); filter.account = null; render(); });

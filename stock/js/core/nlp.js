@@ -150,6 +150,98 @@ function findAssets(s, mask) {
   return found;
 }
 
+
+// ---- 제외 조건(분류): '레버리지 ETF는 빼고', '인버스 제외'
+const CAT_WORDS = [['lev', /(레버리지|2배|3배|2x|3x)/i], ['inv', /(인버스|곱버스)/], ['bond', /(채권|국채|국고채)/], ['cmdty', /(원자재|금\s*(?:etf|현물)?|골드)/i], ['single', /단일\s*종목/], ['cc', /커버드\s*콜/], ['cash', /(현금성|머니마켓|cd금리|단기채)/i]];
+function findExcludeCats(s) {
+  const out = new Set();
+  const re = /([가-힣a-zA-Z0-9·,\s]{1,30}?)\s*(?:etf|ETF|상품|종목|들)?\s*(?:은|는|을|를|도|이랑|과|와)?\s*(?:다\s*)?(?:빼고|빼서|제외|말고|빼줘|빼면)/g;
+  let m;
+  while ((m = re.exec(s))) {
+    const seg = m[1].split(/(?:중에서?|중|에서)\s/).pop();
+    for (const [k, rx] of CAT_WORDS) if (rx.test(seg)) out.add(k);
+  }
+  return [...out];
+}
+
+// ---- 타이밍·조건부 리밸런싱
+const SIG_WORDS = [[/(s&p\s*500|에스앤피|spy|미국\s*시장|미장)/i, 'SPY'], [/(나스닥|qqq)/i, 'QQQ'], [/(코스피|kospi|국장|069500|kodex\s*200)/i, '069500'], [/(코스닥)/, '229200']];
+export function parseTiming(s, isKR) {
+  const t = s.toLowerCase();
+  const def = isKR ? '069500' : 'SPY';
+  const sigOf = (seg) => { if (/(포트폴리오|계좌|내\s*자산|전체)/.test(seg)) return 'self'; if (/(각\s*종목|종목마다|종목별|개별\s*종목)/.test(seg)) return 'each'; for (const [rx, k] of SIG_WORDS) if (rx.test(seg)) return k; return def; };
+  const toOf = () => {
+    const d = t.match(/(현금|초단기채|단기채|장기채|국채|미국채|채권|tlt|ief|bil|shy)\s*(?:etf)?\s*(?:으로|로|에)\s*(?:피신|옮|이동|바꾸|갈아|가|빼|넣|대피|전환|$)/) || t.match(/(현금|초단기채|단기채|장기채|국채|미국채|채권)\s*(?:으로|로)(?![가-힣]*보다)/) || t.match(/면\s*(현금|초단기채|단기채|장기채|국채|미국채|채권)(?=[\s,.!?]|$)/);
+    const w = d?.[1] || '';
+    if (/현금/.test(w)) return 'CASH';
+    if (/장기채|tlt/.test(w)) return isKR ? '148070' : 'TLT';
+    if (/^(국채|미국채|채권|ief)$/.test(w)) return isKR ? '148070' : 'IEF';
+    if (/shy/.test(w)) return 'SHY';
+    return isKR ? '153130' : 'BIL';
+  };
+  const isReb = /리밸런싱|비중\s*(을|를)?\s*(되돌|맞추|조정)/.test(t);
+  const isOut = /(팔|매도|현금|피신|쉬|빠져|탈출|손절|채권으로|국채로|단기채로|정리)/.test(t);
+  const check = /(월말|매달\s*말|한\s*달에\s*한\s*번\s*확인|월\s*단위\s*확인)/.test(t) ? 'M' : 'D';
+  let rule = null, buy = null, sigSeg = t;
+  let m;
+  if ((m = t.match(/([^.,?!]{0,30}?)(?:고점\s*(?:대비|에서)?\s*)?[−-]?\s*(\d+(?:\.\d+)?)\s*%\s*(?:이상|넘게|정도)?\s*(?:빠지|빠졌|하락|떨어|내려|폭락)/))) { rule = { type: 'dd', th: -Math.abs(+m[2]), op: 'below' }; sigSeg = m[1]; }
+  else if ((m = t.match(/([^.,?!]{0,20}?)(\d+)\s*(일|개월|달)\s*(?:이동\s*)?(?:평균)?\s*선?\s*(?:을|를|이)?\s*(아래|밑|이탈|깨|하회|밑돌|위|돌파|넘|상회)/))) {
+    const below = /아래|밑|이탈|깨|하회|밑돌/.test(m[4]);
+    rule = { type: 'ma', n: +m[2], unit: m[3] === '일' ? 'd' : 'm', op: below ? 'below' : 'above' }; sigSeg = m[1];
+    if (!below && isOut) rule.op = 'below';
+  } else if (/데드\s*크로스/.test(t)) rule = { type: 'cross', fast: 50, slow: 200, op: 'dead' };
+  else if (/골든\s*크로스/.test(t)) { rule = { type: 'cross', fast: 50, slow: 200, op: 'dead' }; }
+  else if ((m = t.match(/rsi\s*(?:가|이)?\s*(\d+)\s*(이하|아래|밑|이상|넘|위)/))) {
+    const lo = /이하|아래|밑/.test(m[2]);
+    const other = t.match(/(\d+)\s*(이상|넘|위)[^.]*?(팔|매도)/) || t.match(/(\d+)\s*(이하|아래|밑)[^.]*?(사|매수)/);
+    if (lo) { buy = { type: 'rsi', n: 14, op: 'below', th: +m[1] }; rule = { type: 'rsi', n: 14, op: 'above', th: other && /이상|넘|위/.test(other[2]) ? +other[1] : 70 }; }
+    else { rule = { type: 'rsi', n: 14, op: 'above', th: +m[1] }; const b2 = t.match(/(\d+)\s*(이하|아래|밑)/); buy = { type: 'rsi', n: 14, op: 'below', th: b2 ? +b2[1] : 30 }; }
+    sigSeg = t.slice(0, t.indexOf('rsi'));
+  } else if ((m = t.match(/vix\s*(?:가|이)?\s*(\d+)\s*(이상|넘|위|초과)/))) rule = { type: 'vix', op: 'above', th: +m[1] };
+  else if ((m = t.match(/(\d+)\s*(?:개월|달)\s*수익률\s*(?:이|가)?\s*(마이너스|음수|0\s*%?\s*(?:아래|미만|이하)|단기채보다\s*낮|현금보다\s*낮)/))) rule = { type: 'ret', n: +m[1], unit: 'm', op: 'below', th: /단기채|현금/.test(m[2]) ? 'cash' : 0 };
+  else if (/절대\s*모멘텀|듀얼\s*모멘텀/.test(t)) rule = { type: 'ret', n: 12, unit: 'm', op: 'below', th: 'cash' };
+  else if ((m = t.match(/트레일링\s*스톱\s*[−-]?\s*(\d+)/))) rule = { type: 'trail', th: -Math.abs(+m[1]) };
+  else if ((m = t.match(/변동성\s*(?:을|를)?\s*(?:연\s*)?(\d+)\s*%\s*(?:에|로)?\s*(?:맞추|타깃|타겟|목표)/))) return { kind: 'scale', signal: 'self', targetVol: +m[1], volWindow: 63, to: toOf(), check: 'M' };
+  else if (/볼린저/.test(t)) { rule = { type: 'bb', n: 20, k: 2, op: 'aboveUpper' }; buy = { type: 'bb', n: 20, k: 2, op: 'belowLower' }; }
+  else if (/macd/.test(t)) rule = { type: 'macd', op: 'bear' };
+  if (!rule) return null;
+  const signal = sigOf(String(sigSeg).slice(-14));
+  const chk = /(매일|날마다|하루)/.test(t) ? 'D' : (rule.unit === 'm' || rule.type === 'ret') ? 'M' : check;
+  if (isReb && !isOut) return { kind: 'trigger', signal, rule, check: chk, cooldown: 20 };
+  // 'X% 빠지면 매수' 같은 역추세: 처음엔 현금으로 기다렸다가 사고, 회복하면 팖
+  if (rule.type === 'dd' && /(사|매수|추가\s*매수|담)/.test(t) && !isOut) return { kind: 'switch', signal, sell: { type: 'dd', th: -3, op: 'above' }, buy: rule, to: toOf(), check, startIn: false, note: '하락 때 사고 고점 근처(−3% 안)로 회복하면 파는 규칙으로 해석했어요.' };
+  return { kind: 'switch', signal, sell: rule, buy, to: toOf(), check: chk };
+}
+
+// ---- 반영하지 못했을 수 있는 말(간단 점검)
+const KNOWN = /^(최근|지난|동안|기간|부터|까지|년|개월|달|매달|매월|매년|분기|반기|말일|말일날|말|월말|연말|리밸런싱|리밸|비중|같은|동일|똑같이|균등|시총|시가총액|모멘텀|수익률|상승률|변동성|낮은|높은|좋은|많이|오른|상위|하위|위|등|개|종목|주식|etf|채권|현금|금|미국|국내|한국|코스피|코스닥|나스닥|대형주|중에서|중|골라서|고르|골라|담|담아|사|사서|사고|팔|팔고|매수|매도|투자|투자하면|하면|했을|때|경우|결과|백테스트|보여|보여줘|알려줘|해줘|해|줘|하고|하는|걸로|으로|로|씩|원|만원|달러|적립|인출|비교|대비|벤치마크|이랑|랑|와|과|하고|및|또|그리고|좀|이렇게|정도|약|만|빼고|제외|말고|레버리지|인버스|기준|원화|달러로|배당|재투자|수수료|비용|거래비용|한번|번|1달에|한달에|한|가장|제일|각|마다|이하|이상|아래|위로|넘으면|빠지면|떨어지면|하락|고점|이동평균|일선|개월선|데드크로스|골든크로스|rsi|vix|피신|쉬기|단기채|국채|장기채|트레일링|스톱|볼린저|macd|절대|듀얼|상대|되돌리기|맞추기|교체|바꾸|바꿔|다시|처음|시작|금액|원으로|기준으로|월|일|주|이|그|저|것|거|수|등등|포트폴리오|전략|규칙|조건|어떻게|얼마|몇|년간|팔기|사기|쉬기|추가|낮으면|높으면|넘으면|이상에서|이하에서|수익|교체하면|느낌|대해|대한|위해|하나|둘|셋|모두|전부|각각|매일|확인|판단|시점|이후|이전|동안만|정도로|높은것|낮은것)$/i;
+const ENDINGS = /(하면|하고|해서|하는|했을|하기|해줘|해주세요|하자|합니다|해요|할때|할|한|함|됨|되는|되면|됐을|이면|으면|면|은|는|이|가|을|를|에|에서|의|도|만|으로|로|와|과|랑|이랑|까지|부터|보다|처럼|마다|것|거|걸|게|기|간|날|요|죠|지)$/;
+function isKnownWord(w0) {
+  let w = w0.toLowerCase();
+  for (let k = 0; k < 4; k++) {
+    if (KNOWN.test(w) || w.length < 2) return true;
+    const nw = w.replace(ENDINGS, '');
+    if (nw === w) break;
+    w = nw;
+  }
+  return KNOWN.test(w) || w.length < 2 || /(싶어|싶은|볼까|볼래|어때|인가|일까|입니다)$/.test(w0);
+}
+function leftoverWords(s, mask) {
+  const out = [];
+  const re = /[가-힣A-Za-z]{2,}/g;
+  let m;
+  while ((m = re.exec(s))) {
+    // 앞쪽(어간)이 이미 해석된 범위(종목 이름 등)면 통과: 'SPY가', '애플을'
+    let k = 0; while (k < m[0].length && mask[m.index + k]) k++;
+    if (k === m[0].length) continue;
+    const rest = m[0].slice(k);
+    if (k > 0 && (rest.length <= 2 || isKnownWord(rest))) continue;
+    if (isKnownWord(m[0])) continue;
+    out.push(m[0]);
+  }
+  return [...new Set(out)];
+}
+
 /**
  * 해석: 문장 → {state, report}
  * prev: 지금 상태(고치는 문장 '분기로 바꿔줘'를 덮어쓸 때)
@@ -193,6 +285,23 @@ export function parseCommand(text, prev = null) {
     markRange(i, m[2].length);
   }
 
+  // 타이밍 문구 안의 종목(신호 대상·피신처)은 담을 종목에서 뺌: 'SPY가 15% 빠지면', '단기채보다 낮으면 국채로'
+  const tmPre = parseTiming(s, false);
+  if (tmPre) {
+    const DEFW = /^(단기채|국채|장기채|미국채|채권|현금|초단기채|미국 장기채)$/;
+    const sigIdx = [];
+    for (let i = assets.length - 1; i >= 0; i--) {
+      const a = assets[i];
+      const after = s.slice(a.idx + a.len, a.idx + a.len + 14);
+      if (DEFW.test(a.text)) { assets.splice(i, 1); continue; }
+      const isSig = /^\s*(?:가|이|의)(?=\s)/.test(after) || /^\s*(?:가|이|의)?\s*(?:고점|rsi|vix|이동\s*평균|\d+\s*(?:일|개월)\s*(?:이동)?\s*(?:평균)?\s*선|\d+\s*(?:개월|달)\s*수익률|수익률|데드|골든)/i.test(after);
+      if (isSig) sigIdx.push(i);
+    }
+    const hasRankWord = /(시총|시가총액|모멘텀|수익률\s*(상위|높은)|변동성\s*(낮은|하위))/.test(s);
+    // '…면 현금(으로)', '채권으로 피신' 같은 일반어는 담을 자산이 아니라 피신처
+    for (let i = generic.length - 1; i >= 0; i--) { const g = generic[i]; const before = s.slice(Math.max(0, g.idx - 4), g.idx), after = s.slice(g.idx + g.len, g.idx + g.len + 6); if (['현금', '채권'].includes(g.word) && (/면\s*$/.test(before) || /^\s*(으로|로|에)/.test(after))) generic.splice(i, 1); }
+    if (sigIdx.length && (assets.length > sigIdx.length || hasRankWord)) for (const i of sigIdx) assets.splice(i, 1);
+  }
   // ---- 순위 전략 감지
   const rankMetric = /(시총|시가총액|대장주|덩치)/.test(s) ? 'mcap'
     : /(모멘텀|많이\s*오른|수익률\s*(상위|높은|좋은)|상승률\s*상위|12-1)/.test(s) ? 'mom'
@@ -232,10 +341,13 @@ export function parseCommand(text, prev = null) {
     if (rankMetric === 'lowvol') {
       if ((r = s.match(/(\d+)\s*개월\s*변동성/))) P.rank.lookback = +r[1];
     }
+    // 제외 분류(레버리지·인버스 등)
+    const exCats = findExcludeCats(s);
+    if (exCats.length) { P.rank.excludeCats = exCats; said.add('exclude'); }
     // 제외 종목
     for (const a of assets) {
       const after = s.slice(a.idx + a.len, a.idx + a.len + 6);
-      if (/^\s*(은|는|을|를)?\s*(빼고|제외)/.test(after)) P.rank.exclude.push(a.key);
+      if (/^\s*(?:etf|ETF)?\s*(은|는|을|를|도)?\s*(빼고|제외|말고)/.test(after)) { if (!(P.rank.excludeCats || []).length || !/레버리지|인버스/.test(a.text)) P.rank.exclude.push(a.key); }
     }
     P.rebalance = 'M';
   } else if (assets.length || generic.length || presetItems.length) {
@@ -274,6 +386,16 @@ export function parseCommand(text, prev = null) {
     });
     said.add('rebalance');
   } else defaulted.push('rebalance');
+
+  // ---- 매수·매도 타이밍 / 조건부 리밸런싱
+  const tmg = parseTiming(s, (mKR && !mUS) || st.portfolios.some((p) => p.kind === 'rank' ? p.rank.group.startsWith('KR') : p.assets.length && p.assets.every((a) => getUniverse()?.byKey.get(a.key)?.m === 'KR')));
+  if (tmg) {
+    const note = tmg.note; delete tmg.note;
+    st.portfolios.forEach((p) => { p.timing = structuredClone(tmg); if (tmg.kind === 'trigger' && !/(매달|매월|분기|매년|반기)/.test(s)) p.rebalance = p.kind === 'rank' ? p.rebalance : 'none'; });
+    said.add('timing');
+    if (note) warnings.push(note);
+    if ([tmg.sell, tmg.buy, tmg.rule].some((r) => r?.type === 'vix') && !getUniverse()?.byKey.get('IDX_VIX')) warnings.push('VIX 데이터는 다음 자동 갱신 때 들어와요. 그 전에는 VIX 조건이 동작하지 않아요.');
+  }
 
   // ---- 기간
   const per = parsePeriod(s, years);
@@ -341,6 +463,9 @@ export function parseCommand(text, prev = null) {
   if (/매주|주\s*단위/.test(s)) warnings.push('주 단위 리밸런싱은 아직 안 돼서 매월로 정했어요.');
 
   const empty = !st.portfolios.some((p) => p.kind === 'rank' || p.assets.length) && !st.source;
+  // 반영하지 못했을 수 있는 말
+  for (const a of assets) markRange(a.idx, a.len);
+  ignored.push(...leftoverWords(s, mask));
   if (empty) warnings.push('담을 종목이나 고르는 규칙을 찾지 못했어요. 예: "QQQ 60 SCHD 40" 또는 "미국 시총 상위 3개".');
   // 고치는 문장(종목 없음 + 이전 상태 있음): 리밸런싱·기간·금액 등만 덮어쓰기
   if (prev && empty && (said.size > 0)) {
@@ -349,11 +474,13 @@ export function parseCommand(text, prev = null) {
     if (said.has('period')) merged.period = st.period;
     if (said.has('initial')) { merged.initial = st.initial; merged.currency = st.currency; }
     if (said.has('flow')) merged.flow = st.flow;
-    if (said.has('benchmark')) merged.benchmark = st.benchmark;
+    if (said.has('benchmark')) { merged.benchmark = st.benchmark; merged.benchmarks = st.benchmark ? [st.benchmark] : []; }
     if (said.has('reinvest')) merged.reinvest = st.reinvest;
     if (said.has('fee')) merged.feeBp = st.feeBp;
+    if (said.has('timing')) merged.portfolios.forEach((p) => { p.timing = structuredClone(st.portfolios[0].timing); });
     return { state: merged, report: { patch: true, said: [...said], defaulted: [], warnings: warnings.filter((w) => !w.startsWith('담을')), ignored } };
   }
+  st.benchmarks = st.benchmark ? [st.benchmark] : [];
   st.meta = { said: [...said], defaulted: [...new Set(defaulted)] };
   return { state: st, report: { patch: false, said: [...said], defaulted: [...new Set(defaulted)], warnings, ignored, empty } };
 }

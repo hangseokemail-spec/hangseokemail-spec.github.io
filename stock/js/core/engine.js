@@ -1,6 +1,7 @@
 // 백테스트 엔진 — 순수 계산(화면과 무관). 일별로 보유 수량을 따라가며 평가합니다.
-import { loadPx, loadMonthly, assetInfo } from './data.js';
+import { loadPx, loadMonthly, assetInfo, assetCats } from './data.js';
 import { dayToYm, ymAdd, firstDayOfYm, todayYm, ymDiff, parseYm } from './dates.js';
+import { planTiming, checkMask, alignTo, monthlyRet, DEF_LABEL } from './signals.js';
 
 export const FX_KEY = 'FX_USDKRW';
 
@@ -63,9 +64,9 @@ function lastCompleteYm(lastDay) {
 }
 
 /** 여러 시계열을 합집합 달력에 맞춰 기준통화 가격 배열로 */
-export function alignSeries(pxs, keys, base, fx, fromDay, toDay, useTR) {
+export function alignSeries(pxs, keys, base, fx, fromDay, toDay, useTR, calKeys = null) {
   const set = new Set();
-  for (const k of keys) {
+  for (const k of (calKeys || keys)) {
     const p = pxs[k];
     for (let i = 0; i < p.day.length; i++) {
       const d = p.day[i];
@@ -131,8 +132,12 @@ async function runStatic(s, onProgress) {
   const assets = s.assets.filter((a) => a.key && +a.w > 0);
   if (!assets.length) throw new Error('자산을 하나 이상 넣어 주세요.');
   const keys = assets.map((a) => a.key);
-  const needFx = keys.some((k) => currencyOf(k) !== s.currency);
-  const all = needFx ? [...keys, FX_KEY] : keys;
+  const tm = s.timing?.kind ? s.timing : null;
+  const defKey = tm && tm.kind !== 'trigger' ? (tm.to || 'BIL') : null;
+  const simKeys = defKey && defKey !== 'CASH' && !keys.includes(defKey) ? [...keys, defKey] : keys;
+  const sigKeys = tm ? timingKeys(tm, keys, keys.some((k) => currencyOf(k) === 'USD') ? 'US' : 'KR') : [];
+  const needFx = simKeys.some((k) => currencyOf(k) !== s.currency);
+  const all = [...new Set([...simKeys, ...sigKeys, ...(needFx ? [FX_KEY] : [])])];
   const pxs = await loadMany(all, onProgress);
   const notes = [];
   const sumW = assets.reduce((t, a) => t + +a.w, 0);
@@ -142,7 +147,7 @@ async function runStatic(s, onProgress) {
   // 공통 시작: 가장 늦게 시작한 자산 기준
   let commonFirst = Math.max(...keys.map((k) => pxs[k].day[0]));
   if (needFx) commonFirst = Math.max(commonFirst, pxs[FX_KEY].day[0]);
-  const commonLast = Math.min(...all.map((k) => pxs[k].day[pxs[k].day.length - 1]));
+  const commonLast = Math.min(...[...keys, ...(needFx ? [FX_KEY] : [])].map((k) => pxs[k].day[pxs[k].day.length - 1]));
   const earliest = ymAdd(dayToYm(commonFirst), 1);
   let startYm = s.start ? parseYm(s.start) : earliest;
   if (startYm < earliest) {
@@ -154,9 +159,14 @@ async function runStatic(s, onProgress) {
   endYm = Math.min(endYm, lastCompleteYm(commonLast));
   if (endYm < startYm) throw new Error('기간이 너무 짧습니다. 시작·끝 달을 확인해 주세요.');
 
-  const fromDay = firstDayOfYm(startYm) - 20; // 앵커(직전 달 마지막 거래일) 포함용
+  const warm = tm ? 460 : 0; // 이동평균 등 신호 계산용 앞 구간
+  const fromDay = firstDayOfYm(startYm) - 20 - warm; // 앵커(직전 달 마지막 거래일) 포함용
   const toDay = firstDayOfYm(ymAdd(endYm, 1)) - 1;
-  const al = alignSeries(pxs, keys, s.currency, needFx ? pxs[FX_KEY] : null, fromDay, toDay, s.reinvest !== false);
+  const alKeys = simKeys;
+  const al = alignSeries(pxs, alKeys, s.currency, needFx ? pxs[FX_KEY] : null, fromDay, toDay, s.reinvest !== false, keys);
+  if (defKey === 'CASH') { al.prices.push(new Float64Array(al.days.length).fill(1)); }
+  const colKeys = defKey === 'CASH' ? [...alKeys, 'CASH'] : alKeys;
+  fillDefensive(al, colKeys, defKey, notes);
   // 앵커: 시작 달 이전 마지막 거래일
   const startDay = firstDayOfYm(startYm);
   let a0 = 0;
@@ -166,17 +176,128 @@ async function runStatic(s, onProgress) {
   const mEnds = monthEnds(days);
   if (mEnds[0] !== 0) mEnds.unshift(0);
   const flows = buildFlows(s, days, mEnds);
-  const targets = new Map();
-  targets.set(0, W);
+  const Wfull = new Float64Array(colKeys.length); keys.forEach((k, j) => { Wfull[colKeys.indexOf(k)] = W[j]; });
+  let targets = new Map();
+  targets.set(0, Wfull);
   if (s.rebalance !== 'none' && s.rebalance !== 'band') {
     for (let k = 1; k < mEnds.length; k++) {
       const i = mEnds[k];
-      if (isScheduled(s.rebalance, dayToYm(days[i])) && i !== days.length - 1) targets.set(i, W);
+      if (isScheduled(s.rebalance, dayToYm(days[i])) && i !== days.length - 1) targets.set(i, Wfull);
     }
   }
+  let timing = null;
+  if (tm) {
+    const selfIdx = targetMixIndex(al, colKeys, keys, W);
+    timing = applyTiming({ tm, pxs, al, a0, keys, colKeys, defKey, selfIdx, targets, days, notes });
+    targets = timing.targets;
+  }
   const isMonthEnd = new Uint8Array(days.length); mEnds.forEach((i) => { isMonthEnd[i] = 1; });
-  const sim = simulate({ days, prices, targets, flows, s, W, flowPct: flowPctOf(s), isMonthEnd });
-  return finish(s, sim, { keys, days, prices, mEnds, notes, startYm, endYm, flows: sim.flowsApplied || flows });
+  const sim = simulate({ days, prices, targets, flows, s, W: targets.get(0), flowPct: flowPctOf(s), isMonthEnd });
+  const res = finish(s, sim, { keys: colKeys, days, prices, mEnds, notes, startYm, endYm, flows: sim.flowsApplied || flows });
+  if (timing) res.timing = timing.out;
+  return res;
+}
+
+// ------------------------------------------------------------------ 타이밍 도우미
+function timingKeys(tm, keys, mkt) {
+  const out = [];
+  if (tm.signal && !['self', 'each'].includes(tm.signal)) out.push(tm.signal);
+  const rules = [tm.sell, tm.buy, tm.rule].filter(Boolean);
+  if (rules.some((r) => r.type === 'vix')) out.push('IDX_VIX');
+  if (rules.some((r) => r.type === 'ret' && r.th === 'cash')) out.push(mkt === 'KR' ? '153130' : 'BIL');
+  return out.filter((k) => assetInfo(k));
+}
+
+/** 방어 자산 데이터가 늦게 시작하면 그 전은 현금(0%)처럼 값 고정 */
+function fillDefensive(al, colKeys, defKey, notes) {
+  if (!defKey || defKey === 'CASH') return;
+  const j = colKeys.indexOf(defKey);
+  if (j < 0) return;
+  const p = al.prices[j];
+  const first = p.findIndex((x) => x > 0);
+  if (first > 0) {
+    for (let i = 0; i < first; i++) p[i] = p[first];
+    notes.push(`${nameOf(defKey)} 상장 전(${new Date(al.days[first] * 864e5).toISOString().slice(0, 7)} 이전)에는 현금(수익 0%)으로 계산했어요.`);
+  } else if (first < 0) { p.fill(1); notes.push(`${nameOf(defKey)} 데이터가 없어 현금(0%)으로 계산했어요.`); }
+}
+
+/** 목표 비중을 매일 유지했다고 친 지수(포트폴리오 자신을 신호로 쓸 때) */
+function targetMixIndex(al, colKeys, keys, W) {
+  const n = al.days.length, idx = new Float64Array(n).fill(NaN);
+  const cols = keys.map((k) => al.prices[colKeys.indexOf(k)]);
+  let v = NaN;
+  for (let i = 1; i < n; i++) {
+    let r = 0, ok = true;
+    for (let j = 0; j < cols.length; j++) { const a = cols[j][i - 1], b = cols[j][i]; if (!(a > 0 && b > 0)) { ok = false; break; } r += W[j] * (b / a - 1); }
+    if (!ok) { continue; }
+    v = isFinite(v) ? v * (1 + r) : 1;
+    idx[i] = v;
+  }
+  return idx;
+}
+
+function rawSeries(px, extras) {
+  const s = { day: px.day, v: px.close };
+  if (extras.cash) s.cashRet = alignTo(extras.cash.day, monthlyRet(extras.cash.day, extras.cash.tr, extras.n || 12), px.day);
+  if (extras.vix) s.vix = alignTo(extras.vix.day, extras.vix.close, px.day);
+  return s;
+}
+
+/** 타이밍 규칙 → 날짜별 노출 → 새 목표 비중 지도 */
+function applyTiming({ tm, pxs, al, a0, keys, colKeys, defKey, selfIdx, targets, days, notes, proxyKey }) {
+  const rules = [tm.sell, tm.buy, tm.rule].filter(Boolean);
+  const retN = rules.find((r) => r.type === 'ret' && r.th === 'cash')?.n || 12;
+  const cashKey = pxs.BIL ? 'BIL' : pxs['153130'] ? '153130' : null;
+  const extras = { cash: cashKey ? pxs[cashKey] : null, vix: pxs.IDX_VIX || null, n: retN };
+  const sigs = {};
+  const fullDays = al.days;
+  if (tm.signal === 'each') {
+    sigs.each = keys.map((k) => rawSeries(pxs[k], extras));
+  } else if (tm.signal === 'self' || !tm.signal) {
+    if (selfIdx) {
+      const s0 = { day: fullDays, v: selfIdx };
+      if (extras.cash) s0.cashRet = alignTo(extras.cash.day, monthlyRet(extras.cash.day, extras.cash.tr, retN), fullDays);
+      if (extras.vix) s0.vix = alignTo(extras.vix.day, extras.vix.close, fullDays);
+      // 앞쪽 NaN(지수 시작 전) 제거
+      const f = selfIdx.findIndex((x) => isFinite(x));
+      sigs.main = f > 0 ? { day: fullDays.slice(f), v: selfIdx.slice(f), cashRet: s0.cashRet?.slice(f), vix: s0.vix?.slice(f) } : s0;
+    } else if (proxyKey && pxs[proxyKey]) { sigs.main = rawSeries(pxs[proxyKey], extras); notes.push(`순위 전략의 '포트폴리오 자신' 신호는 ${nameOf(proxyKey)}로 대신 판단했어요.`); }
+  } else if (pxs[tm.signal]) sigs.main = rawSeries(pxs[tm.signal], extras);
+  if (tm.kind === 'scale') sigs.self = selfIdx || (proxyKey && pxs[proxyKey] ? alignTo(pxs[proxyKey].day, pxs[proxyKey].tr, fullDays) : null);
+  if (!sigs.main && !sigs.each && !sigs.self) { notes.push('타이밍 신호 데이터를 찾지 못해 타이밍 없이 계산했어요.'); return { targets, out: null }; }
+  const isCheck = checkMask(fullDays, tm.check || 'D');
+  const plan = planTiming(tm, sigs, fullDays, isCheck);
+  // 시작 이전(워밍업) 구간 잘라내기
+  const n = days.length;
+  const expo = plan.expo.slice(a0);
+  const expoEach = plan.expoEach?.map((e) => e.slice(a0));
+  const events = plan.events.filter((e) => e.i >= a0).map((e) => ({ ...e, i: e.i - a0, at: e.at != null ? e.at - a0 : null }));
+  const dj = defKey ? colKeys.indexOf(defKey) : -1;
+  const baseAt = [...targets.entries()].sort((a, b) => a[0] - b[0]);
+  const effective = (base, i) => {
+    if (tm.kind === 'trigger') return base;
+    const w = new Float64Array(base.length);
+    let used = 0;
+    for (let j = 0; j < base.length; j++) {
+      if (j === dj) continue;
+      const kj = keys.indexOf(colKeys[j]);
+      const e = expoEach && kj >= 0 ? expoEach[kj][i] : expo[i];
+      w[j] = base[j] * e; used += w[j];
+    }
+    if (dj >= 0) w[dj] = Math.max(0, 1 - used) + (base[dj] || 0) * 0;
+    return w;
+  };
+  const out = new Map();
+  let bi = 0, cur = baseAt[0][1];
+  const evAt = new Set(events.map((e) => e.i));
+  for (let i = 0; i < n; i++) {
+    let changed = false;
+    while (bi < baseAt.length && baseAt[bi][0] === i) { cur = baseAt[bi][1]; bi++; changed = true; }
+    if (changed || evAt.has(i) || i === 0) out.set(i, effective(cur, i));
+  }
+  const nSell = events.filter((e) => e.kind === 'sell').length, nReb = events.filter((e) => e.kind === 'reb').length;
+  const inRatio = expoEach ? expoEach.reduce((t, e) => t + e.reduce((a, x) => a + x, 0), 0) / Math.max(1, n * expoEach.length) : expo.reduce((t, x) => t + x, 0) / Math.max(1, n);
+  return { targets: out, out: { tm, expo, expoEach, events, defKey, defLabel: defKey ? (DEF_LABEL[defKey] || nameOf(defKey)) : null, nSell, nReb, inRatio } };
 }
 
 // ------------------------------------------------------------------ 순위 전략
@@ -234,7 +355,9 @@ async function runRank(s, onProgress) {
       cand.push({ k: tbl.tickers[ti], score, mc: val(tbl.mc, ti, m), vol: val(tbl.vol, ti, m) });
     }
     const ex = new Set(r.exclude || []);
-    const pool = cand.filter((c) => !ex.has(c.k));
+    const exCats = new Set(r.excludeCats || []);
+    const only = r.universe?.length ? new Set(r.universe) : null;
+    const pool = cand.filter((c) => !ex.has(c.k) && (!only || only.has(c.k)) && (!exCats.size || ![...assetCats(assetInfo(c.k))].some((x) => exCats.has(x))));
     pool.sort((a, b) => b.score - a.score || (a.k < b.k ? -1 : 1));
     const sel = pool.slice(Math.max(0, (r.from || 1) - 1), r.top);
     if (!sel.length) continue;
@@ -250,12 +373,21 @@ async function runRank(s, onProgress) {
   }
   if (!picks.size) throw new Error('조건에 맞는 종목을 찾지 못했습니다.');
   const keys = [...used];
-  const needFx = keys.some((k) => currencyOf(k) !== s.currency);
-  const all = needFx ? [...keys, FX_KEY] : keys;
+  const tm = s.timing?.kind ? s.timing : null;
+  const mkt = r.group.startsWith('KR') ? 'KR' : 'US';
+  const proxyKey = mkt === 'KR' ? '069500' : 'SPY';
+  const defKey = tm && tm.kind !== 'trigger' ? (tm.to || (mkt === 'KR' ? '153130' : 'BIL')) : null;
+  const simKeys = defKey && defKey !== 'CASH' && !keys.includes(defKey) ? [...keys, defKey] : keys;
+  const sigKeys = tm ? [...timingKeys(tm, keys, mkt), ...((tm.signal === 'self' || tm.kind === 'scale') ? [proxyKey] : [])] : [];
+  const needFx = simKeys.some((k) => currencyOf(k) !== s.currency);
+  const all = [...new Set([...simKeys, ...sigKeys, ...(needFx ? [FX_KEY] : [])])];
   const pxs = await loadMany(all, onProgress);
-  const fromDay = firstDayOfYm(startYm) - 20;
+  const fromDay = firstDayOfYm(startYm) - 20 - (tm ? 460 : 0);
   const toDay = firstDayOfYm(ymAdd(endYm, 1)) - 1;
-  const al = alignSeries(pxs, keys, s.currency, needFx ? pxs[FX_KEY] : null, fromDay, toDay, s.reinvest !== false);
+  const al = alignSeries(pxs, simKeys, s.currency, needFx ? pxs[FX_KEY] : null, fromDay, toDay, s.reinvest !== false, keys);
+  if (defKey === 'CASH') al.prices.push(new Float64Array(al.days.length).fill(1));
+  const colKeys = defKey === 'CASH' ? [...simKeys, 'CASH'] : simKeys;
+  fillDefensive(al, colKeys, defKey, notes);
   const startDay = firstDayOfYm(startYm);
   let a0 = 0;
   for (let i = 0; i < al.days.length; i++) if (al.days[i] < startDay) a0 = i;
@@ -263,20 +395,27 @@ async function runRank(s, onProgress) {
   const prices = al.prices.map((p) => p.slice(a0));
   const mEnds = monthEnds(days);
   if (mEnds[0] !== 0) mEnds.unshift(0);
-  const kIndex = new Map(keys.map((k, i) => [k, i]));
-  const targets = new Map();
+  const kIndex = new Map(colKeys.map((k, i) => [k, i]));
+  let targets = new Map();
   const history = [];
   for (const i of mEnds) {
     const ym = dayToYm(days[i]);
     const pk = picks.get(ym);
     if (!pk || (i === days.length - 1 && i !== 0)) continue;
-    const W = new Float64Array(keys.length);
+    const W = new Float64Array(colKeys.length);
     pk.forEach((p) => { W[kIndex.get(p.key)] = p.w; });
     targets.set(i, W);
     history.push({ ym, picks: pk });
   }
+  let timing = null;
+  if (tm) {
+    if (!targets.has(0)) { const f = [...targets.keys()].sort((a, b) => a - b)[0]; targets.set(0, targets.get(f)); }
+    timing = applyTiming({ tm, pxs, al, a0, keys, colKeys, defKey, selfIdx: null, targets, days, notes, proxyKey });
+    targets = timing.targets;
+  }
   const sim = simulate({ days, prices, targets, flows: buildFlows(s, days, mEnds), s, W: targets.get(0), flowPct: flowPctOf(s) });
-  const res = finish(s, sim, { keys, days, prices, mEnds, notes, startYm, endYm, flows: sim.flowsApplied });
+  const res = finish(s, sim, { keys: colKeys, days, prices, mEnds, notes, startYm, endYm, flows: sim.flowsApplied });
+  if (timing) res.timing = timing.out;
   res.rankHistory = history;
   res.notes.push(rankDisclaimer(r));
   return res;
@@ -437,6 +576,6 @@ function finish(s, sim, ctx) {
   };
 }
 
-function nameOf(k) { return assetInfo(k)?.n || k; }
+function nameOf(k) { return k === 'CASH' ? '현금' : assetInfo(k)?.n || k; }
 function fmtYm(ym) { return `${Math.floor(ym / 100)}년 ${ym % 100}월`; }
 function round2(x) { return Math.round(x * 100) / 100; }

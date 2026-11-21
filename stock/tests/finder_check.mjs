@@ -1,0 +1,24 @@
+import './node-loader.mjs';
+import { findStrategies, candSentence, candToBacktest } from '../js/core/finder.js';
+import { runBacktest } from '../js/core/engine.js';
+import { computeMetrics } from '../js/core/metrics.js';
+let t = performance.now();
+const r = await findStrategies({ market: 'US', targetCagr: 12, maxMdd: 20, years: 15 });
+console.log('US 15y 후보', r.count, '계산됨', r.all.length, '충족', r.qualified.length, Math.round(performance.now() - t), 'ms');
+for (const x of r.recs) console.log(' ', (x.m.cagr * 100).toFixed(1), (x.m.mdd * 100).toFixed(1), '|', (x.h1.cagr * 100).toFixed(1), (x.h2.cagr * 100).toFixed(1), x.consistent ? '일관' : '  ', candSentence(x));
+// 추천 1위를 일별 엔진으로 → 비슷해야
+const top = r.recs[0];
+const st = candToBacktest(top, 15);
+const pf = st.portfolios[0];
+const end = r.yms[r.yms.length - 1], start = r.yms[1];
+const res = await runBacktest({ name: 'x', kind: pf.kind, assets: pf.assets, rank: pf.rank, rebalance: pf.rebalance, timing: pf.timing, start: `${String(start).slice(0, 4)}-${String(start).slice(4)}`, end: `${String(end).slice(0, 4)}-${String(end).slice(4)}`, initial: 10000, currency: st.currency, feeBp: 10, reinvest: true });
+const m = computeMetrics(res, null, 0);
+console.log('일별 엔진 재계산', (m.cagr * 100).toFixed(1), (m.mdd * 100).toFixed(1), 'vs 월 단위', (top.m.cagr * 100).toFixed(1), (top.m.mdd * 100).toFixed(1));
+t = performance.now();
+const k = await findStrategies({ market: 'KR', targetCagr: 8, maxMdd: 25, years: 10 });
+console.log('KR 10y', k.count, k.all.length, k.qualified.length, Math.round(performance.now() - t), 'ms');
+for (const x of k.recs.slice(0, 4)) console.log(' ', (x.m.cagr * 100).toFixed(1), (x.m.mdd * 100).toFixed(1), candSentence(x));
+t = performance.now();
+const a = await findStrategies({ market: 'ALL', targetCagr: 10, maxMdd: 20, years: 10, allowLev: true });
+console.log('ALL 10y lev', a.count, a.all.length, a.qualified.length, Math.round(performance.now() - t), 'ms');
+for (const x of a.recs.slice(0, 4)) console.log(' ', (x.m.cagr * 100).toFixed(1), (x.m.mdd * 100).toFixed(1), candSentence(x));

@@ -9,7 +9,7 @@ export const catColor = (i) => (i >= 8 ? css('--cat-x') : css(`--cat-${i + 1}`))
 
 function base() {
   return {
-    animationDuration: 500,
+    animationDuration: 350, animationDurationUpdate: 200,
     textStyle: { fontFamily: css('--font') || 'sans-serif', color: css('--text-2') },
     grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
   };
@@ -84,7 +84,7 @@ export function lineChart(elm, { series, yFmt = (v) => v, log = false, readout =
     c.setOption({
       ...base(),
       tooltip: { ...tooltip(yFmt, isTime && !xType), formatter: xFmt ? ((ps) => tooltipFmt(yFmt, false)((Array.isArray(ps) ? ps : [ps]).map((p) => ({ ...p, axisValue: xFmt(p.axisValue ?? p.value?.[0]) })))) : tooltip(yFmt, isTime && !xType).formatter },
-      grid: grid ? { ...base().grid, ...grid } : { ...base().grid, right: series.some((x) => x.endLabel) && !isMobile() ? 96 : 16 },
+      grid: grid ? { ...base().grid, ...grid } : { ...base().grid, right: series.some((x) => x.endLabel) && !isMobile() ? (series.some((x) => x.endRich) ? 118 : 96) : 16 },
       xAxis: { type: xType || (isTime ? 'time' : 'category'), min: xMin ?? undefined, max: xMax ?? undefined, ...axisCommon(), splitLine: { show: false }, axisLabel: { color: css('--text-3'), fontSize: 12, hideOverlap: true, formatter: xFmt || (isTime ? { year: '{yyyy}', month: '{yy}.{MM}', day: '{MM}.{dd}' } : undefined) } },
       yAxis: { type: log ? 'log' : 'value', scale: !log && yMin == null, min: yMin ?? undefined, max: yMax ?? undefined, ...axisCommon(), axisLabel: { color: css('--text-3'), fontSize: 12, formatter: (v) => yFmt(v, true) } },
       series: series.map((s) => ({
@@ -92,8 +92,9 @@ export function lineChart(elm, { series, yFmt = (v) => v, log = false, readout =
         lineStyle: { width: s.width ?? 2, color: s.color, type: s.dashed ? 'dashed' : 'solid' }, itemStyle: { color: s.color },
         areaStyle: s.area ? { color: s.color, opacity: s.areaOpacity ?? 0.12 } : undefined,
         emphasis: { disabled: true }, z: s.z ?? 2, tooltipHide: s.tooltipHide,
-        markLine: s.markLine, markPoint: s.markPoint,
-        endLabel: s.endLabel ? { show: !isMobile(), formatter: s.endLabel, color: css('--text-2'), fontSize: 12 } : undefined,
+        markLine: s.markLine, markPoint: s.markPoint, markArea: s.markArea,
+        endLabel: s.endLabel ? { show: !isMobile(), formatter: s.endLabel, color: css('--text-2'), fontSize: 12, distance: 8, ...(s.endRich ? { rich: { n: { color: css('--text-3'), fontSize: 11, lineHeight: 15 }, v: { color: s.color, fontSize: 15, fontWeight: 700, lineHeight: 19 }, c: { color: css('--text-2'), fontSize: 11, lineHeight: 15 } } } : {}) } : undefined,
+        labelLayout: s.endRich ? { moveOverlap: 'shiftY' } : undefined,
       })),
       ...(markLine || {}),
     }, true);

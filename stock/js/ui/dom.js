@@ -9,7 +9,15 @@ export function el(html) {
   return t.content.firstElementChild;
 }
 
+import { PERSONAL, vaultGet, vaultSet } from '../core/auth.js';
+import { krRead, krReadUSD } from './format.js';
+import { assetInfo } from '../core/data.js';
 export function store(key, val) {
+  if (PERSONAL.has(key)) { // 계정별 암호화 저장소
+    if (val === undefined) return structuredClone(vaultGet(key));
+    vaultSet(key, structuredClone(val));
+    return val;
+  }
   try {
     if (val === undefined) return JSON.parse(localStorage.getItem(key) || 'null');
     localStorage.setItem(key, JSON.stringify(val));
@@ -53,6 +61,7 @@ export function sheet(content, { wide = false, onClose = null, label = '' } = {}
   ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
   document.addEventListener('keydown', onKey);
   document.body.appendChild(ov);
+  moneyHints(sh);
   setTimeout(() => ($('input, select, textarea, button', sh))?.focus(), 30);
   return { close, root: sh };
 }
@@ -76,11 +85,13 @@ export function popover(anchor, html) {
 export function debounce(fn, ms = 200) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
 /** 설정 */
-const DEFAULT_SETTINGS = { theme: 'dark', bandDaily: false, updown: 'kr', currency: 'KRW', feeBp: 10, apiKey: '', model: 'claude-sonnet-5-5', altStyle: 'equity', noCommodity: true, bandAbs: 3, capSingle: 20, capProduct: 25, hideAmounts: false };
-export function settings() { return { ...DEFAULT_SETTINGS, ...(store('ss.settings') || {}) }; }
+const DEFAULT_SETTINGS = { theme: 'light', bandDaily: false, updown: 'kr', currency: 'KRW', feeBp: 10, apiKey: '', model: 'claude-sonnet-5-5', altStyle: 'equity', noCommodity: true, bandAbs: 3, capSingle: 20, capProduct: 25, hideAmounts: false };
+export function settings() { return { ...DEFAULT_SETTINGS, ...(store('ss.settings') || {}), ...(vaultGet('ss.priv') || {}) }; }
 export function saveSettings(patch) {
   const s = { ...settings(), ...patch };
-  store('ss.settings', s);
+  const { apiKey, model, ...dev } = s;
+  store('ss.settings', dev);
+  vaultSet('ss.priv', { ...(vaultGet('ss.priv') || {}), apiKey, model });
   applyTheme(s);
   return s;
 }
@@ -89,4 +100,21 @@ export function applyTheme(s = settings()) {
   if (dark) document.documentElement.dataset.theme = 'dark'; else delete document.documentElement.dataset.theme;
   if (s.updown === 'global') document.documentElement.dataset.updown = 'global'; else delete document.documentElement.dataset.updown;
   window.dispatchEvent(new Event('themechange'));
+}
+
+/** 금액 입력칸 아래에 한글 읽기(2천만원 / 1만 2천5백 달러 · 약 1,750만원)를 붙임: <input data-money="KRW|USD"> */
+export function moneyHints(root = document) {
+  $$('input[data-money]', root).forEach((inp) => {
+    const host = inp.closest('.input-unit') || inp;
+    let hint = host.nextElementSibling?.classList?.contains('kr-hint') ? host.nextElementSibling : null;
+    if (!hint) { hint = document.createElement('span'); hint.className = 'kr-hint'; hint.setAttribute('aria-live', 'polite'); host.after(hint); }
+    const upd = () => {
+      const v = +String(inp.value).replace(/[^\d.\-]/g, '');
+      const cur = inp.dataset.money;
+      const fx = assetInfo('FX_USDKRW')?.p;
+      hint.textContent = !v ? '' : cur === 'USD' ? krReadUSD(v, fx) : krRead(v, 'KRW');
+    };
+    if (!inp.dataset.hinted) { inp.addEventListener('input', upd); inp.dataset.hinted = '1'; }
+    upd();
+  });
 }

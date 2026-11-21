@@ -1,0 +1,13 @@
+{
+ "version": 1,
+ "accounts": [
+  {
+   "h": "43e40c90687f613279d0b492b8acca2115db06b11b84bb673fb30dc9fdb8aec9",
+   "salt": "U/D/lpeu0BSMqK3VAL9LeA==",
+   "iter": 310000,
+   "ver": "0UD4jwT0p9Um8rJyxeI7BhUBb7MfRhgo6EdTVVbpyy4=",
+   "role": "master",
+   "name": "석스"
+  }
+ ]
+}
