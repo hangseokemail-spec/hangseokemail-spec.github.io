@@ -14,7 +14,7 @@ const inited = {};
 
 function show(tab) {
   if (!TABS.includes(tab)) tab = 'backtest';
-  if (PRIVATE_TABS.has(tab) && !currentUser()) { openLogin(true); tab = 'backtest'; if (location.hash.slice(1) !== 'backtest') history.replaceState(null, '', '#backtest'); }
+  if (PRIVATE_TABS.has(tab) && !currentUser()) { sessionStorage.setItem('ss.afterLogin', tab); openLogin(true); tab = 'backtest'; if (location.hash.slice(1) !== 'backtest') history.replaceState(null, '', '#backtest'); }
   $$('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${tab}`));
   if (!inited[tab]) {
@@ -56,6 +56,8 @@ function openLogin(fromLocked = false) {
     const btn = $('#lg_go', box); btn.disabled = true; btn.textContent = '확인 중…'; $('#lg_err', box).textContent = '';
     const r = await login($('#lg_id', box).value, $('#lg_pw', box).value, $('#lg_keep', box).checked);
     if (!r.ok) { $('#lg_err', box).textContent = r.error; btn.disabled = false; btn.textContent = '들어가기'; $('#lg_pw', box).select(); return; }
+    const want = sessionStorage.getItem('ss.afterLogin'); sessionStorage.removeItem('ss.afterLogin');
+    if (want) history.replaceState(null, '', `#${want}`);
     location.reload(); // 계정 데이터로 처음부터 그림
   };
 }

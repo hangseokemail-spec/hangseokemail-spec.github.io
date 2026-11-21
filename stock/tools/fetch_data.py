@@ -451,27 +451,47 @@ def start_of(u):
 
 
 def fred_prepend(raw, series="DEXKOUS"):
-    """야후 KRW=X는 2003년 12월부터라, 그 전은 미 연준(FRED) 일별 원/달러 환율로 앞에 붙임."""
-    try:
-        r = S.get(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}", timeout=30)
-        r.raise_for_status()
-        first = raw["dates"][0]
-        pre_d, pre_c = [], []
-        for line in r.text.splitlines()[1:]:
-            d, _, v = line.partition(",")
+    """야후 KRW=X는 2003년 12월부터라, 그 전은 미 연준(FRED) 일별 원/달러 환율로 앞에 붙임(안 되면 stooq)."""
+    first = raw["dates"][0]
+    rows = []
+    srcs = [("FRED", f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"), ("stooq", "https://stooq.com/q/d/l/?s=usdkrw&i=d")]
+    for name, url in srcs:
+        for attempt in range(2):
             try:
-                dd = int(d.replace("-", "")); vv = float(v)
-            except ValueError:
-                continue
-            if dd < first and dd >= 19850101 and vv > 0:
-                pre_d.append(dd); pre_c.append(vv)
-        if pre_d:
-            raw["dates"] = pre_d + raw["dates"]
-            raw["close"] = pre_c + raw["close"]
-            raw["adj"] = [None] * len(pre_d) + raw["adj"]
-            log(f"  FX: FRED {series} {len(pre_d)}일 앞에 붙임({pre_d[0]}~)")
-    except Exception as e:  # noqa: BLE001
-        log(f"  FX: FRED 실패 {e}")
+                r = requests.get(url, timeout=90, headers={"User-Agent": "Mozilla/5.0 (seoks-stock data bot)", "Accept": "text/csv,*/*"})
+                r.raise_for_status()
+                for line in r.text.splitlines()[1:]:
+                    parts = line.split(",")
+                    if len(parts) < 2:
+                        continue
+                    try:
+                        dd = int(parts[0].replace("-", ""))
+                        vv = float(parts[4] if name == "stooq" and len(parts) > 4 else parts[1])
+                    except ValueError:
+                        continue
+                    if 19850101 <= dd < first and vv > 0:
+                        rows.append((dd, vv))
+                if rows:
+                    break
+            except Exception as e:  # noqa: BLE001
+                log(f"  FX: {name} 실패({attempt + 1}) {str(e)[:80]}")
+                time.sleep(3)
+        if rows:
+            rows.sort()
+            raw["dates"] = [d for d, _ in rows] + raw["dates"]
+            raw["close"] = [v for _, v in rows] + raw["close"]
+            raw["adj"] = [None] * len(rows) + raw["adj"]
+            log(f"  FX: {name} {len(rows)}일 앞에 붙임({rows[0][0]}~)")
+            break
+    if not rows:  # 둘 다 실패하면 지난 파일의 앞부분을 그대로 이어 붙임(주간 전체 재수집 때 잃지 않게)
+        old = load_existing("FX_USDKRW")
+        if old:
+            keep = [(d, c) for d, c in zip(old["dates"], old["close"]) if d < first]
+            if keep:
+                raw["dates"] = [d for d, _ in keep] + raw["dates"]
+                raw["close"] = [c for _, c in keep] + raw["close"]
+                raw["adj"] = [None] * len(keep) + raw["adj"]
+                log(f"  FX: 지난 파일 앞부분 {len(keep)}일 유지")
     return raw
 
 
@@ -538,8 +558,8 @@ def fetch_one(u):
                 shares = (shares or []) + [[today, cur]]
     chk = tr_check(raw) if (src == "yahoo" and mode == "full") else None
     obj = encode(key, raw, shares, src)
-    if start_of(u) != START_TS:
-        obj["p1"] = start_of(u)
+    if start_of(u) != START_TS and not (key == "FX_USDKRW" and raw["dates"][0] > 20000101):
+        obj["p1"] = start_of(u)  # 환율은 앞부분 보충에 성공했을 때만 완료 표시(실패하면 다음에 다시 시도)
     changed = write_json(os.path.join(PX, f"{key}.json"), obj)
     c = raw["close"]
     meta = {
