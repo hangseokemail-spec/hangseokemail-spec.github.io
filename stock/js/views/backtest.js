@@ -1248,7 +1248,7 @@ async function renderDiagnosis() {
     const tone = Math.abs(d) < 1e-9 ? '' : good ? 't-good' : 't-bad';
     return `<div class="${on ? 'on' : ''}"><dt>${lb}</dt><dd><b>${v}</b><small class="${tone}">${d === null ? '' : lb === '샤프 지수' ? `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}` : pp(d)}</small></dd></div>`;
   };
-  A.innerHTML = `<div class="alt4-head"><b>이렇게 바꿔 보면</b><span class="cap">지금 전략: 연 ${fmtPct(base.cagr)} · 최대 낙폭 ${fmtPct(base.mdd)} · 변동성 ${fmtPct(base.vol)} · 샤프 ${base.sharpe.toFixed(2)} — 비중·리밸런싱·ETF 섞기·하락장 쉬기 후보 ${out.tried}개를 같은 기간으로 계산했어요</span></div>
+  A.innerHTML = `<div class="alt4-head"><b>이렇게 바꿔 보면</b><span class="cap">지금 전략: 연 ${fmtPct(base.cagr)} · 최대 낙폭 ${fmtPct(base.mdd)} · 변동성 ${fmtPct(base.vol)} · 샤프 ${base.sharpe.toFixed(2)} — 비중·리밸런싱·ETF 섞기·하락장 쉬기(6·10·12개월선) 후보 ${out.tried}개를 같은 기간으로 계산했어요</span></div>
     <div class="alt4">${ALT_GOALS.map((g) => {
       const p = out.picks[g.id];
       const color = css(G_COLOR[g.id]) || seriesColor(3);
@@ -1259,7 +1259,7 @@ async function renderDiagnosis() {
         <h4>${esc(p.label)}</h4>
         <p class="cap alt4-detail">${esc(altDetail(p))}</p>
         <dl class="alt4-m">${cell('연환산 수익률', fmtPct(m.cagr), m.cagr - base.cagr, m.cagr >= base.cagr, g.id === 'cagr')}${cell('최대 낙폭', fmtPct(m.mdd), m.mdd - base.mdd, m.mdd >= base.mdd, g.id === 'mdd')}${cell('변동성', fmtPct(m.vol), m.vol - base.vol, m.vol <= base.vol, g.id === 'vol')}${cell('샤프 지수', m.sharpe.toFixed(2), m.sharpe - base.sharpe, m.sharpe >= base.sharpe, g.id === 'sharpe')}</dl>
-        <footer>${p.strat ? `<button class="btn small ghost" type="button" data-cmp="${g.id}">이 대안으로 비교</button>` : ''}${p.approx ? '<span class="cap">월간 혼합 근사</span>' : ''}${p.relaxed ? '<span class="cap">다른 지표를 조금 양보한 안</span>' : ''}</footer>
+        <footer>${p.strat ? `<button class="btn small ghost" type="button" data-cmp="${g.id}">이 대안으로 비교</button>` : ''}${p.approx ? '<span class="cap">월간 혼합 근사</span>' : ''}${p.relaxed ? '<span class="cap">다른 지표를 조금 양보한 안</span>' : ''}${p.id.startsWith('tm-') ? '<span class="cap">6·10·12개월선 중 이 기간에 가장 잘 맞은 길이라, 다른 시기엔 달라질 수 있어요</span>' : ''}</footer>
       </article>`;
     }).join('')}</div>
     <p class="cap">같은 과거 기간에 맞춰 고른 대안이라 미래에도 같은 효과를 보장하지는 않아요. 낮추기 대안은 수익률이 지금의 75% 아래로 떨어지지 않는 것, 수익률 대안은 낙폭이 5%p 넘게 깊어지지 않는 것 중에서 골랐어요.</p>`;
@@ -1271,7 +1271,7 @@ let altPicks = {}, altColors = {};
 function altDetail(p) {
   if (p.approx) return `지금 전략 ${100 - p.pct}% + ${label(p.key)} ${p.pct}%를 매달 맞춰 섞은 결과`;
   const s = p.strat;
-  const tail = `${s.timing?.kind ? ' · 10개월선 아래면 쉬기' : ''}`;
+  const tail = s.timing?.kind ? ` · ${s.timing.sell?.n || 10}${s.timing.sell?.unit === 'd' ? '일' : '개월'}선 아래면 쉬기` : '';
   if (s.kind === 'rank') return `${pfText({ kind: 'rank', rank: s.rank })} · ${REB[s.rebalance] || s.rebalance} 바꾸기${tail}`;
   const tot = s.assets.reduce((t, a) => t + +a.w, 0) || 1;
   return `${s.assets.map((a) => `${short(a.key)} ${Math.round(+a.w / tot * 100)}`).join(' · ')} · 리밸런싱 ${s.rebalance === 'band' ? `밴드 ${s.band?.abs ?? 5}%p` : REB[s.rebalance] || s.rebalance}${tail}`;

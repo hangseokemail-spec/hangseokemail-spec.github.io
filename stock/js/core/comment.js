@@ -129,6 +129,10 @@ const ETF_SETS = {
   KR: { def: [['114260', '국고채 3년'], ['148070', '국고채 10년'], ['132030', '금'], ['153130', '단기채권']], grow: [['069500', '코스피200'], ['133690', '미국 나스닥100']] },
 };
 const REB_NAME = { none: '안 함', M: '매월', Q: '분기마다', S: '반기마다', A: '매년', band: '밴드' };
+// 하락장 쉬기: 지수가 N개월 평균 아래면 월말에 단기채로(6·10·12개월은 결과가 비슷한 범주라 셋 다 시험)
+const TM_MONTHS = [6, 10, 12];
+const tmLabel = (mkt, n) => `${mkt === 'KR' ? '코스피200' : 'S&P 500'}이 ${n}개월 평균 아래면 단기채로 쉬기`;
+const tmRule = (mkt, n) => ({ kind: 'switch', signal: mkt === 'KR' ? '069500' : 'SPY', sell: { type: 'ma', n, unit: 'm', op: 'below' }, buy: null, to: mkt === 'KR' ? '153130' : 'BIL', check: 'M' });
 
 /** 지금 전략에서 한 가지씩 바꾼 후보들(비중·리밸런싱·ETF 섞기·타이밍·순위 조건) */
 export function altCandidates(run) {
@@ -164,7 +168,7 @@ export function altCandidates(run) {
       for (const pct of [20, 40]) add(`mix-${k}-${pct}`, `${n}(${k}) ${pct}% ${have ? '더 넣기' : '섞기'}`, 'alt', { alt: { kind: 'mix', key: k, pct } });
     }
     // 하락장 쉬기
-    if (!st.timing?.kind) add('tm-ma10', `${mkt === 'KR' ? '코스피200' : 'S&P 500'}이 10개월 평균 아래면 단기채로 쉬기`, 'strat', { strat: { ...st, timing: { kind: 'switch', signal: mkt === 'KR' ? '069500' : 'SPY', sell: { type: 'ma', n: 10, unit: 'm', op: 'below' }, buy: null, to: mkt === 'KR' ? '153130' : 'BIL', check: 'M' } } });
+    if (!st.timing?.kind) for (const n of TM_MONTHS) add(`tm-ma${n}`, tmLabel(mkt, n), 'strat', { strat: { ...st, timing: tmRule(mkt, n) } });
   } else {
     const r = st.rank, mkt = r.group.startsWith('KR') ? 'KR' : 'US';
     const n = r.top - (r.from || 1) + 1;
@@ -173,7 +177,7 @@ export function altCandidates(run) {
     for (const w of ['equal', 'invvol', 'mcap']) if (w !== r.weighting) add(`rk-w-${w}`, `비중을 ${{ equal: '똑같이', invvol: '변동성 반비례로', mcap: '시가총액 비례로' }[w]}`, 'strat', { strat: { ...st, rank: { ...r, weighting: w } } });
     for (const f of ['M', 'Q', 'A']) if (f !== st.rebalance) add(`rk-reb-${f}`, `종목 바꾸기 ${REB_NAME[st.rebalance] || st.rebalance} → ${REB_NAME[f]}`, 'strat', { strat: { ...st, rebalance: f } });
     for (const [m, l] of [['mcap', '시가총액'], ['mom', '12개월 모멘텀'], ['lowvol', '낮은 변동성']]) if (m !== r.metric) add(`rk-m-${m}`, `순위 기준을 ${l}로`, 'strat', { strat: { ...st, rank: { ...r, metric: m, lookback: 12, skip: 0 } } });
-    if (!st.timing?.kind) add('tm-ma10', `${mkt === 'KR' ? '코스피200' : 'S&P 500'}이 10개월 평균 아래면 단기채로 쉬기`, 'strat', { strat: { ...st, timing: { kind: 'switch', signal: mkt === 'KR' ? '069500' : 'SPY', sell: { type: 'ma', n: 10, unit: 'm', op: 'below' }, buy: null, to: mkt === 'KR' ? '153130' : 'BIL', check: 'M' } } });
+    if (!st.timing?.kind) for (const n of TM_MONTHS) add(`tm-ma${n}`, tmLabel(mkt, n), 'strat', { strat: { ...st, timing: tmRule(mkt, n) } });
     for (const [k, nm2] of [...ETF_SETS[mkt].def.slice(0, 3), ...ETF_SETS[mkt].grow.slice(0, 1)]) if (okFrom(k)) for (const pct of [20, 40]) add(`bl-${k}-${pct}`, `${nm2}(${k}) ${pct}% 함께 들고 가기`, 'blend', { key: k, pct });
   }
   return out;
