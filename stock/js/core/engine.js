@@ -324,7 +324,7 @@ async function runRank(s, onProgress) {
   if (fKey || ff) {
     if (!r.group.endsWith('STOCK')) throw new Error('실적 지표는 개별 주식에서만 쓸 수 있어요(ETF는 실적 자료가 없어요).');
     fprep = await loadFundPrep(r.group);
-    if (!fprep) throw new Error(r.group.startsWith('KR') ? '국내 주식 실적 자료는 아직 준비 중이에요. 지금은 미국 주식에서만 쓸 수 있어요.' : '실적 자료를 불러오지 못했어요.');
+    if (!fprep) throw new Error(r.group.startsWith('KR') ? '국내 주식 실적 자료는 아직 준비 중이에요(금감원 DART에서 받는 중). 지금은 미국 주식에서만 쓸 수 있어요.' : '실적 자료를 불러오지 못했어요.');
   }
   let earliest = ymAdd(M[0], need + 1);
   if (fprep) {
@@ -464,8 +464,9 @@ export function capWeights(w, cap) {
 
 function rankDisclaimer(r) {
   const base = '순위 전략은 지금 수집 목록(현재 대형주 중심)에 있는 종목만 후보로 삼아, 과거에 상장폐지·탈락한 종목이 빠져 있습니다(생존 편향).';
+  const kr = r.group.startsWith('KR');
   const fund = isFundMetric(r.metric) || r.ff?.key
-    ? ' 실적은 SEC 공시(XBRL)의 분기 값이고, 달말 이틀 전까지 공시된 분기만 그 달말에 썼습니다(그때 알 수 없던 값은 쓰지 않음). 성장률은 기준 분기가 적자·0이면 계산하지 않고, 이익률은 최근 4분기 합으로 셉니다. 미국 외 회사(TSMC·ASML 등)는 분기 공시가 없어 빠집니다.'
+    ? ` 실적은 ${kr ? '금감원 DART 공시(연결 우선, 없으면 별도)' : 'SEC 공시(XBRL)'}의 분기 값이고, 달말 이틀 전까지 공시된 분기만 그 달말에 썼습니다(그때 알 수 없던 값은 쓰지 않음). 성장률은 기준 분기가 적자·0이면 계산하지 않고, 이익률은 최근 4분기 합으로 셉니다.${kr ? ' 순이익은 지배주주 몫, 12월 결산 회사만 담았습니다.' : ' 미국 외 회사(TSMC·ASML 등)는 분기 공시가 없어 빠집니다.'}`
     : '';
   if (fund) return `${base} 그달 시가총액 상위 ${r.poolTop ?? 50}개 안에서 골랐습니다.${fund}`;
   if (r.metric === 'mcap') return `${base} 과거 시가총액은 종가×상장주식수로 추정하며, 과거 주식수가 없는 기간은 가장 오래된 주식수를 씁니다.`;

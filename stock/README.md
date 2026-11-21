@@ -16,11 +16,12 @@ https://hangseokemail-spec.github.io/stock/ — 한국·미국 주식·ETF 백�
 - `config/` — `accounts.json` 마스터 계정(해시만, `tools/make_account.mjs`로 만듦), `backend.json` 계정 저장소 주소
   - `js/views/` 화면 세 개, `js/ui/` 공통(서식·차트·DOM)
 - `data/` — 시세 데이터베이스(GitHub Actions가 갱신)
-  - `universe.json` 종목 목록·최근 종가, `px/<키>.json` 일별 종가(분할 반영)·배당, `monthly_<그룹>.json` 순위 전략용 월간 표, `kr_all.json` 국내 전 종목·ETF 이름과 시세, `extra_tickers.txt` 추가 종목, `fund/US_STOCK.json` 미국 주식 분기 실적(SEC XBRL, 매출·영업이익·순이익·EPS와 공시일)
+  - `universe.json` 종목 목록·최근 종가, `px/<키>.json` 일별 종가(분할 반영)·배당, `monthly_<그룹>.json` 순위 전략용 월간 표, `kr_all.json` 국내 전 종목·ETF 이름과 시세, `extra_tickers.txt` 추가 종목, `fund/US_STOCK.json`·`fund/KR_STOCK.json` 분기 실적(미국 SEC XBRL·국내 DART, 매출·영업이익·순이익·EPS와 공시일)
 - `tools/` — 수집기(`fetch_data.py`, `universe_seed.py`, 실적 `fetch_fund.py`), 계정 저장소(`apps_script/`), 화면 확인 스크립트(`dev/`), 색 검사(`design_check/`)
 - `HANDOFF.md` — 작업 인수인계용 세부 지침서
 - `tests/` — 수치 검증(`node tests/run.mjs`: 퀀트 기대값 96개 + 포트폴리오 비주얼라이저 대조, `timing_check.mjs` 타이밍 20개, `finder_check.mjs` 전략 찾기, `fund_check.mjs` 실적 19개)
 
 ## 데이터 갱신
-`.github/workflows/stock-data.yml` — 화~토 06:40, 월~금 16:50(KST)에 마지막 저장일 이후만 받아 붙임(증분), 일요일에 전체 점검. 미국·지수는 1985년, 국내는 2000년부터(상장 이후). 원/달러는 2003년 이전을 FRED(DEXKOUS)로 보충. 같은 작업에서 실적도 새 분기가 나올 때가 된 종목만 SEC에서 받아 없던 분기만 붙임(국내는 OpenDART 인증키 `DART_API_KEY`가 생기면 추가 예정).
+`.github/workflows/stock-data.yml` — 화~토 06:40, 월~금 16:50(KST)에 마지막 저장일 이후만 받아 붙임(증분), 일요일에 전체 점검. 미국·지수는 1985년, 국내는 2000년부터(상장 이후). 원/달러는 2003년 이전을 FRED(DEXKOUS)로 보충. 같은 작업에서 실적도 새 분기가 나올 때가 된 종목만 SEC에서 받아 없던 분기만 붙임
+`.github/workflows/stock-fund.yml` — 국내 실적: 매일 19:20(KST) 금감원 OpenDART에서 새로 나온 분기·반기·사업보고서만 받아 붙임(저장소 Secrets의 `DART_API_KEY` 필요, 2015년~).
 `.github/workflows/stock-add-ticker.yml` — 제목이 `[종목 추가]`로 시작하는 이슈(저장소 주인)가 열리면 그 종목을 DB에 넣고 답글을 단 뒤 닫음. 앱의 종목 검색에서 ‘추가 요청’을 누르면 이 이슈가 열려요.

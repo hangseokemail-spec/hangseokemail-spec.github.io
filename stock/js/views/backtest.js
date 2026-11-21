@@ -640,13 +640,13 @@ function renderEditor(pf) {
   const box = $('#pfEditor', root);
   if (pf.kind === 'rank') {
     const r = pf.rank;
-    const fundOk = r.group === 'US_STOCK';
+    const fundOk = r.group === 'US_STOCK' || r.group === 'KR_STOCK';
     if (!fundOk && isFundMetric(r.metric)) r.metric = 'mcap';
     if (!fundOk && r.ff) delete r.ff;
     box.innerHTML = `<div class="stack">
       <div class="grid2"><label class="field">고를 곳<select class="input" id="r_group">${Object.entries(GROUPS).map(([k, l]) => `<option value="${k}" ${r.group === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label class="field">순위 기준<select class="input" id="r_metric"><optgroup label="가격으로">${Object.entries(PRICE_METRICS).map(([k, l]) => `<option value="${k}" ${r.metric === k ? 'selected' : ''}>${l}</option>`).join('')}</optgroup>
-        <optgroup label="실적으로 · 높은 순(${fundOk ? '미국 주식, 2009년~' : r.group === 'KR_STOCK' ? '국내는 준비 중' : 'ETF는 없음'})">${Object.entries(FUND_METRICS).map(([k, v]) => `<option value="f:${k}" ${r.metric === `f:${k}` ? 'selected' : ''} ${fundOk ? '' : 'disabled'}>${v.label}</option>`).join('')}</optgroup></select></label></div>
+        <optgroup label="실적으로 · 높은 순(${fundOk ? (r.group === 'US_STOCK' ? '미국 공시, 2009년~' : '국내 공시, 2015년~') : 'ETF는 실적 없음'})">${Object.entries(FUND_METRICS).map(([k, v]) => `<option value="f:${k}" ${r.metric === `f:${k}` ? 'selected' : ''} ${fundOk ? '' : 'disabled'}>${v.label}</option>`).join('')}</optgroup></select></label></div>
       <div class="grid3"><label class="field">몇 위부터<input class="input num" id="r_from" type="number" min="1" value="${r.from || 1}"></label><label class="field">몇 위까지<input class="input num" id="r_top" type="number" min="1" max="30" value="${r.top}"></label>
       <label class="field">비중<select class="input" id="r_w"><option value="equal" ${r.weighting === 'equal' ? 'selected' : ''}>같게</option><option value="mcap" ${r.weighting === 'mcap' ? 'selected' : ''}>시총 비례</option><option value="invvol" ${r.weighting === 'invvol' ? 'selected' : ''}>변동성 반비례</option></select></label></div>
       <div class="grid3" ${r.metric === 'mcap' || isFundMetric(r.metric) ? 'hidden' : ''}><label class="field">살펴볼 기간<div class="input-unit"><input class="input num" id="r_lb" type="number" min="2" value="${r.lookback}"><span>개월</span></div></label>
@@ -657,7 +657,7 @@ function renderEditor(pf) {
         <div class="input-unit"><input class="input num" id="r_ffm" inputmode="decimal" value="${r.ff?.min ?? ''}" placeholder="예: 20" ${r.ff?.key ? '' : 'disabled'}><span>% 이상</span></div></div></div>
       <div class="field">빼고 고를 종류<div class="chips" id="r_cats">${Object.entries(CAT_LABEL).map(([k, l]) => `<button class="chip" type="button" data-cat="${k}" aria-pressed="${(r.excludeCats || []).includes(k)}">${l} 빼기</button>`).join('')}</div></div>
       <label class="field">빼고 고를 종목(티커·코드, 쉼표로)<input class="input" id="r_ex" value="${esc((r.exclude || []).join(', '))}" placeholder="예: NVDA, TSLA"></label>
-      <p class="cap">리밸런싱 때마다 그 시점에 알 수 있던 정보로만 다시 골라요. 실적은 회사가 공시한 날 뒤부터만 써요(미국 SEC 분기 공시, 2009년~). 후보는 지금 수집 목록에 있는 종목이라 과거에 사라진 종목은 빠져 있어요(생존 편향).</p></div>`;
+      <p class="cap">리밸런싱 때마다 그 시점에 알 수 있던 정보로만 다시 골라요. 실적은 회사가 공시한 날 뒤부터만 써요(미국 SEC 2009년~, 국내 금감원 DART 2015년~). 후보는 지금 수집 목록에 있는 종목이라 과거에 사라진 종목은 빠져 있어요(생존 편향).</p></div>`;
     const upd = () => {
       Object.assign(r, { group: $('#r_group', box).value, metric: $('#r_metric', box).value, from: +$('#r_from', box).value || 1, top: Math.max(+$('#r_top', box).value || 3, +$('#r_from', box).value || 1), weighting: $('#r_w', box).value, lookback: +$('#r_lb', box)?.value || 12, skip: +$('#r_skip', box)?.value || 0, maxW: +$('#r_max', box)?.value || null, exclude: $('#r_ex', box).value.split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean) });
       const fk = $('#r_ffk', box)?.value, fm = $('#r_ffm', box)?.value.trim();

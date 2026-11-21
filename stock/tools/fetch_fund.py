@@ -4,7 +4,10 @@
 미국: SEC EDGAR XBRL companyfacts(무료·공식, 2009년 무렵부터). 같은 분기 값이 여러 번 나오면
       '처음 공시된 값과 그 공시일'을 쓴다 → 백테스트에서 그때 알 수 없던 값을 쓰지 않게.
       4분기는 10-K 연간 값에서 1~3분기를 빼서 만들고, 공시일은 10-K 날짜.
-한국: OpenDART(금감원 전자공시) API. 환경변수 DART_API_KEY가 있을 때만(아직 준비 중).
+한국: OpenDART(금감원 전자공시) API, 2015년~. 환경변수 DART_API_KEY가 있을 때만.
+      분기·반기·3분기 보고서의 손익계산서 '3개월' 값을 그 분기 값으로, 4분기는 사업보고서 연간 − 3분기 누적.
+      공시일 = 접수번호(rcept_no) 앞 8자리. 연결재무제표가 없으면 별도. 결산월이 12월이 아닌 회사는 뺌.
+      저장: stock/data/fund/KR_STOCK.json(같은 모양, 금액은 원). 받은 보고서는 done에 적어 다시 받지 않음.
 
 저장: stock/data/fund/US_STOCK.json
   {"updated", "src", "fields": ["end","filed","rev","oi","ni","eps"],
@@ -14,7 +17,8 @@
 
 SEC는 User-Agent에 연락처를 요구한다: 환경변수 SEC_UA(예: "이름 연락처")를 쓰고, 없으면 일반 이름을 쓴다.
 """
-import argparse, datetime as dt, json, os, sys, time, urllib.request, urllib.error, gzip
+import argparse, datetime as dt, io, json, os, sys, time, urllib.parse, urllib.request, urllib.error, gzip, zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
@@ -219,9 +223,237 @@ def run_us(full=False, only=None, limit=None):
         meta_p = os.path.join(DATA, "meta.json")
         meta = json.load(open(meta_p))
         meta["updated"] = db["updated"]
-        meta["fund"] = {"US_STOCK": {"updated": db["updated"], "tickers": len(db["t"]), "nodata": len(db["nodata"])}}
+        meta.setdefault("fund", {})["US_STOCK"] = {"updated": db["updated"], "tickers": len(db["t"]), "nodata": len(db["nodata"])}
         json.dump(meta, open(meta_p, "w"), ensure_ascii=False, indent=1)
     print(f"US: 받음 {fetched}, 바뀜 {changed}, 자료 없음 {len(set(nodata))} {sorted(set(nodata))}")
+
+
+# ------------------------------------------------------------------ 한국: OpenDART
+DART = "https://opendart.fss.or.kr/api/"
+REPORTS = [("11013", 3, 45), ("11012", 6, 45), ("11014", 9, 45), ("11011", 12, 90)]  # (보고서 코드, 분기말 월, 제출 기한 일)
+
+
+class DartStop(Exception):
+    pass
+
+
+class Dart:
+    """키는 환경변수에서만 읽고, 주소·키를 화면에 찍지 않는다."""
+    def __init__(self, key, max_calls):
+        self.key, self.max_calls, self.calls = key, max_calls, 0
+
+    def raw(self, name, **params):
+        if self.calls >= self.max_calls:
+            raise DartStop(f"이번 실행 호출 한도 {self.max_calls}회")
+        self.calls += 1
+        url = DART + name + "?" + urllib.parse.urlencode({"crtfc_key": self.key, **params})
+        for i in range(4):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "SeoksStock-research/1.0"}), timeout=40) as r:
+                    b = r.read()
+                time.sleep(0.07)
+                return b
+            except Exception as e:  # 주소(키 포함)는 찍지 않음
+                err = type(e).__name__
+                time.sleep(2 * (i + 1))
+        raise DartStop(f"OpenDART 연결 실패({err})")
+
+    def json(self, name, **params):
+        j = json.loads(self.raw(name, **params))
+        st = j.get("status")
+        if st in ("010", "011", "012", "901"):
+            raise DartStop(f"인증키 문제({st}: {j.get('message')})")
+        if st == "020":
+            raise DartStop("오늘 호출 한도를 넘었어요(020) — 내일 이어서 받음")
+        return j
+
+
+def num(v):
+    if v is None:
+        return None
+    v = str(v).replace(",", "").strip()
+    if v in ("", "-"):
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        return None
+
+
+NM = lambda x: str(x or "").replace(" ", "")
+KR_ACCOUNTS = {
+    "rev": (["ifrs-full_Revenue", "ifrs_Revenue"], ["매출액", "수익(매출액)", "영업수익", "매출", "매출액(영업수익)", "영업수익(매출액)", "수익"]),
+    "oi": (["dart_OperatingIncomeLoss"], ["영업이익", "영업이익(손실)", "영업손익", "영업손실"]),
+    "ni": (["ifrs-full_ProfitLossAttributableToOwnersOfParent", "ifrs_ProfitLossAttributableToOwnersOfParent", "ifrs-full_ProfitLoss", "ifrs_ProfitLoss"],
+           ["지배기업의소유주에게귀속되는당기순이익", "지배기업소유주지분", "당기순이익", "당기순이익(손실)", "분기순이익", "분기순이익(손실)", "반기순이익", "반기순이익(손실)", "당기순손익"]),
+    "eps": (["ifrs-full_DilutedEarningsLossPerShare", "ifrs_DilutedEarningsLossPerShare", "ifrs-full_BasicEarningsLossPerShare", "ifrs_BasicEarningsLossPerShare"],
+            ["희석주당이익", "희석주당이익(손실)", "기본주당이익", "기본주당이익(손실)", "기본및희석주당이익", "기본및희석주당이익(손실)", "기본주당순이익", "기본주당순이익(손실)"]),
+}
+
+
+def kr_pick(items):
+    """한 보고서의 손익계산서에서 매출·영업이익·순이익·EPS의 (3개월 값, 누적 값)."""
+    rows = [x for x in items if x.get("sj_div") in ("IS", "CIS")]
+    rows.sort(key=lambda x: (0 if x.get("sj_div") == "IS" else 1, int(x.get("ord") or 0)))
+    out = {}
+    for k, (ids, nms) in KR_ACCOUNTS.items():
+        hit = None
+        for want in ids:
+            hit = next((x for x in rows if x.get("account_id") == want), None)
+            if hit:
+                break
+        if not hit:
+            for want in nms:
+                hit = next((x for x in rows if NM(x.get("account_nm")) == want), None)
+                if hit:
+                    break
+        out[k] = (num(hit.get("thstrm_amount")), num(hit.get("thstrm_add_amount"))) if hit else (None, None)
+    return out
+
+
+def kr_quarters(reps):
+    """reps: {(연도, 보고서코드): {'filed': yyyymmdd, 'v': kr_pick 결과}} → 분기 표."""
+    rows = []
+    years = sorted({y for y, _ in reps})
+    for y in years:
+        q1, h1, q3, fy = (reps.get((y, c)) for c in ("11013", "11012", "11014", "11011"))
+        for rc, mon, rep_ in (("11013", 3, q1), ("11012", 6, h1), ("11014", 9, q3)):
+            if rep_:
+                end = y * 10000 + mon * 100 + (31 if mon in (3, 12) else 30)
+                rows.append([end, rep_["filed"]] + [rep_["v"][k][0] for k in ("rev", "oi", "ni", "eps")])
+        if fy:
+            vals = []
+            for k in ("rev", "oi", "ni", "eps"):
+                a = fy["v"][k][0]
+                cum9 = q3["v"][k][1] if q3 and q3["v"][k][1] is not None else None
+                if cum9 is None and q1 and h1 and q3 and None not in (q1["v"][k][0], h1["v"][k][0], q3["v"][k][0]):
+                    cum9 = q1["v"][k][0] + h1["v"][k][0] + q3["v"][k][0]
+                vals.append(a - cum9 if a is not None and cum9 is not None else None)
+            rows.append([y * 10000 + 1231, fy["filed"]] + vals)
+    out = []
+    for r in sorted(rows):
+        r = r[:2] + [None if v is None else int(round(v)) for v in r[2:5]] + [None if r[5] is None else round(r[5], 1)]
+        if r[2] is not None and r[2] <= 0:
+            r[2] = None
+        if any(v is not None for v in r[2:]):
+            out.append(r)
+    return out
+
+
+def corp_codes(d, need):
+    path = os.path.join(FUND, "dart_corp.json")
+    m = json.load(open(path)) if os.path.exists(path) else {}
+    if all(t in m for t in need):
+        return m
+    z = zipfile.ZipFile(io.BytesIO(d.raw("corpCode.xml")))
+    root = ET.fromstring(z.read(z.namelist()[0]))
+    allm = {}
+    for el in root.iter("list"):
+        sc = (el.findtext("stock_code") or "").strip()
+        if sc:
+            allm[sc] = el.findtext("corp_code").strip()
+    m.update({t: allm.get(t) for t in need})
+    json.dump(m, open(path, "w"), ensure_ascii=False, indent=0, sort_keys=True)
+    return m
+
+
+def run_kr(max_calls=15000, max_minutes=200, full=False, only=None, fetcher=None):
+    """국내 실적. 받은 보고서 원본 값은 KR_raw.json(수집기 전용), 앱이 읽는 분기 표는 KR_STOCK.json."""
+    key = os.environ.get("DART_API_KEY", "").strip()
+    if not key and not fetcher:
+        print("KR: DART_API_KEY가 없어 국내 실적은 건너뜀")
+        return
+    os.makedirs(FUND, exist_ok=True)
+    d = fetcher or Dart(key, max_calls)
+    t0 = time.time()
+    all_t = json.load(open(os.path.join(DATA, "monthly_KR_STOCK.json")))["tickers"]
+    tickers = [t for t in all_t if t in only] if only else all_t
+    raw_p, pub_p = os.path.join(FUND, "KR_raw.json"), os.path.join(FUND, "KR_STOCK.json")
+    raw = json.load(open(raw_p)) if os.path.exists(raw_p) else {"t": {}}
+    pub = json.load(open(pub_p)) if os.path.exists(pub_p) else {"t": {}}
+    today = dt.date.today()
+    changed, stop = 0, None
+
+    def rebuild(t):
+        nonlocal changed
+        cur = raw["t"][t]
+        q = kr_quarters({(int(k[:4]), k[5:]): v for k, v in cur.get("reps", {}).items()})
+        old = pub["t"].get(t, {}).get("q")
+        if q and q != old:
+            pub["t"][t] = {"corp": cur.get("corp"), "fs": cur.get("fs"), "q": q}
+            changed += 1
+            print(f"{t}: {len(q)}분기 ({q[0][0]}~{q[-1][0]}) 호출 {getattr(d, 'calls', 0)}", flush=True)
+
+    def save():
+        stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        raw["updated"] = stamp
+        json.dump(raw, open(raw_p, "w"), ensure_ascii=False, separators=(",", ":"))
+        pub.update({"updated": stamp, "src": "OpenDART 단일회사 전체 재무제표(연결 우선)", "fields": ["end", "filed", "rev", "oi", "ni", "eps"], "currency": "KRW"})
+        pub["nodata"] = sorted(t for t in all_t if not pub["t"].get(t, {}).get("q"))
+        pub["skip"] = {t: v["skip"] for t, v in raw["t"].items() if v.get("skip")}
+        with open(pub_p, "w") as f:
+            json.dump(pub, f, ensure_ascii=False, separators=(",", ":"))
+
+    t = None
+    try:
+        corp = corp_codes(d, tickers)
+        for n, t in enumerate(tickers):
+            if time.time() - t0 > max_minutes * 60:
+                stop = f"시간 한도 {max_minutes}분"
+                break
+            cur = raw["t"].setdefault(t, {"corp": corp.get(t), "done": [], "reps": {}})
+            if full:
+                cur.update({"done": [], "reps": {}})
+                cur.pop("fs", None)
+            cc = cur.get("corp") or corp.get(t)
+            if not cc:
+                cur["skip"] = "고유번호 없음"
+                continue
+            if "acc_mt" not in cur:
+                cur["acc_mt"] = str(d.json("company.json", corp_code=cc).get("acc_mt") or "")
+            if cur["acc_mt"] and cur["acc_mt"] != "12":
+                cur["skip"] = f"결산월 {cur['acc_mt']}월(12월 결산만 받음)"
+                continue
+            cur.pop("skip", None)
+            done = set(cur["done"])
+            touched = False
+            for y in range(2015, today.year + 1):
+                for rc, mon, due in REPORTS:
+                    tag = f"{y}-{rc}"
+                    pend = dt.date(y, mon, 31 if mon in (3, 12) else 30)
+                    if tag in done or (today - pend).days < 30:
+                        continue  # 받았거나 아직 낼 때가 아님
+                    items = None
+                    for fs in ([cur["fs"]] if cur.get("fs") else ["CFS", "OFS"]):
+                        j = d.json("fnlttSinglAcntAll.json", corp_code=cc, bsns_year=str(y), reprt_code=rc, fs_div=fs)
+                        if j.get("status") == "000" and j.get("list"):
+                            items = j["list"]
+                            cur["fs"] = fs
+                            break
+                    if items:
+                        cur["reps"][tag] = {"filed": int(str(items[0]["rcept_no"])[:8]), "v": kr_pick(items)}
+                        done.add(tag)
+                        touched = True
+                    elif (today - pend).days > due + 30:
+                        done.add(tag)  # 상장 전이거나 끝내 안 낸 보고서는 다시 묻지 않음
+                    cur["done"] = sorted(done)
+            cur["at"] = today.isoformat()
+            if touched:
+                rebuild(t)
+            if n % 10 == 9:
+                save()
+    except DartStop as e:
+        stop = str(e)
+        if t and t in raw["t"] and raw["t"][t].get("reps"):
+            rebuild(t)
+    save()
+    if changed:
+        meta_p = os.path.join(DATA, "meta.json")
+        meta = json.load(open(meta_p))
+        meta["updated"] = pub["updated"]
+        meta.setdefault("fund", {})["KR_STOCK"] = {"updated": pub["updated"], "tickers": sum(1 for v in pub["t"].values() if v.get("q")), "nodata": len(pub["nodata"])}
+        json.dump(meta, open(meta_p, "w"), ensure_ascii=False, indent=1)
+    print(f"KR: 호출 {getattr(d, 'calls', 0)}, 바뀜 {changed}, 자료 있음 {sum(1 for v in pub['t'].values() if v.get('q'))}종목" + (f", 멈춤: {stop}" if stop else ""))
 
 
 def main():
@@ -229,10 +461,16 @@ def main():
     ap.add_argument("--full", action="store_true")
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--us-only", action="store_true")
+    ap.add_argument("--kr-only", action="store_true")
+    ap.add_argument("--max-calls", type=int, default=15000, help="OpenDART 이번 실행 최대 호출(하루 2만 회 한도)")
+    ap.add_argument("--max-minutes", type=int, default=200)
     a = ap.parse_args()
-    run_us(full=a.full, only=set(a.only) if a.only else None, limit=a.limit)
-    if not os.environ.get("DART_API_KEY"):
-        print("KR: DART_API_KEY가 없어 국내 실적은 건너뜀")
+    only = set(a.only) if a.only else None
+    if not a.kr_only:
+        run_us(full=a.full, only=only, limit=a.limit)
+    if not a.us_only:
+        run_kr(max_calls=a.max_calls, max_minutes=a.max_minutes, full=a.full, only=only)
 
 
 if __name__ == "__main__":
