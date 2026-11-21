@@ -408,7 +408,7 @@ KR_BS = {
 KR_CF = {
     "cfo": (["ifrs-full_CashFlowsFromUsedInOperatingActivities", "ifrs_CashFlowsFromUsedInOperatingActivities"],
             ["영업활동현금흐름", "영업활동으로인한현금흐름", "영업활동으로부터의현금흐름", "영업활동순현금흐름", "영업활동으로인한순현금흐름"]),
-    "capex": (["ifrs-full_PurchaseOfPropertyPlantAndEquipment", "ifrs_PurchaseOfPropertyPlantAndEquipment"], ["유형자산의취득", "유형자산취득"]),
+    "capex": (["ifrs-full_PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities", "ifrs-full_PurchaseOfPropertyPlantAndEquipment", "ifrs_PurchaseOfPropertyPlantAndEquipment"], ["유형자산의취득", "유형자산취득"]),
     "bb": (["ifrs-full_PaymentsToAcquireOrRedeemEntitysShares", "ifrs_PaymentsToAcquireOrRedeemEntitysShares", "dart_AcquisitionOfTreasuryShares"], ["자기주식의취득", "자기주식취득"]),
     "div": (["ifrs-full_DividendsPaidClassifiedAsFinancingActivities", "ifrs_DividendsPaidClassifiedAsFinancingActivities", "ifrs-full_DividendsPaid"],
             ["배당금의지급", "배당금지급", "배당금의지급(지배기업)", "현금배당금의지급"]),

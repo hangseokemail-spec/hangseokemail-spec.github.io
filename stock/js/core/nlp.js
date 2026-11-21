@@ -315,7 +315,8 @@ export function parseCommand(text, prev = null) {
   if (cmpT.words.length && cmpT.start >= 0) {
     const inTail = (a) => a.idx >= cmpT.start && a.idx < cmpT.end;
     const rest = assets.filter((a) => !inTail(a)).length + generic.length + presetItems.length;
-    const rankWords = /(시총|시가총액|대장주|모멘텀|많이\s*오른|수익률\s*(상위|높은|좋은)|상승률\s*상위|변동성\s*(낮은|작은|하위)|저변동)/.test(s);
+    // 순위 규칙 말(가격·실적·팩터)이 있으면 꼬리의 지수는 비교 대상
+    const rankWords = /(시총|시가총액|대장주|모멘텀|많이\s*오른|수익률\s*(상위|높은|좋은)|상승률\s*상위|변동성\s*(낮은|작은|하위)|저변동|이익\s*률|성장\s*률|증가\s*율|ROE|팩터|가치|밸류|PER|PBR|PSR|베타|FCF|잉여\s*현금|주주\s*환원|GP\/A|매출\s*총\s*이익|자산\s*성장|발생액|52\s*주|단기\s*반전|이익\s*수익률|매출\s*수익률|장부가)/i.test(s);
     if (rest || rankWords) { for (let i = assets.length - 1; i >= 0; i--) if (inTail(assets[i])) assets.splice(i, 1); }
     else cmpT.words = []; // 'SPY랑 QQQ 비교'처럼 비교 대상뿐이면 둘을 포트폴리오로
   }

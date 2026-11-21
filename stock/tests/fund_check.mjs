@@ -54,9 +54,14 @@ for (const h of r2.rankHistory) for (const p of h.picks) { const f = fundAt(fp, 
 ok(under === 0 && r2.rankHistory.length > 100, '영업이익률 25% 이상인 종목만');
 const r3 = await runBacktest({ kind: 'rank', currency: 'USD', initial: 10000, start: '2000-01', rebalance: 'M', feeBp: 10, rank: { group: 'US_STOCK', metric: 'f:opm', from: 1, top: 5, weighting: 'equal', lookback: 12, skip: 0 } });
 ok(r3.notes.some((n) => /부터 계산/.test(n)) && r3.rankHistory[0].ym >= 200906, `실적이 있는 때부터 시작(${r3.rankHistory[0].ym})`);
-let threw = '';
-try { await runBacktest({ kind: 'rank', currency: 'KRW', initial: 1e7, rebalance: 'M', rank: { group: 'KR_STOCK', metric: 'f:rev_yoy', top: 5 } }); } catch (e) { threw = e.message; }
-ok(/준비 중/.test(threw), '국내는 아직 없다고 알림');
+// 국내(DART): 국내 대형주 실적 순위가 돈다 — 점수는 그달 알 수 있던 값, 고른 종목은 국내 목록 안
+const kfp = await loadFundPrep('KR_STOCK');
+ok(kfp && kfp.by.size >= 100, `국내 실적 ${kfp?.by.size}종목`);
+const kr = await runBacktest({ kind: 'rank', currency: 'KRW', initial: 1e7, start: '2018-01', end: '2025-12', rebalance: 'Q', feeBp: 10, rank: { group: 'KR_STOCK', metric: 'f:opm', from: 1, top: 10, weighting: 'equal' } });
+let kleak = 0;
+for (const h of kr.rankHistory) for (const p of h.picks) { const f = fundAt(kfp, p.key, cutoffOf(h.ym)); if (!f || !near(f.opm, p.score)) kleak++; }
+ok(kr.rankHistory.length >= 30 && kleak === 0 && kr.rankHistory.every((h) => h.picks.every((p) => /^\d{6}$/.test(p.key))), `국내 영업이익률 상위 10 분기마다(${kr.rankHistory.length}번), 점수 불일치 ${kleak}건`);
+console.log('국내 영업이익률 상위 10 마지막:', kr.rankHistory.at(-1).ym, kr.rankHistory.at(-1).picks.map((p) => `${p.key} ${(p.score * 100).toFixed(0)}%`).join(', '));
 
 const cagr = (x) => (x.metrics?.cagr ?? null);
 console.log('매출 YoY 상위 10(2016~2025) 마지막 고른 종목:', r.rankHistory.at(-1).ym, r.rankHistory.at(-1).picks.map((p) => `${p.key} ${(p.score * 100).toFixed(0)}%`).join(', '));
