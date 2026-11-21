@@ -339,6 +339,26 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-label); 
 @media (min-width: 641px) { .as-head { padding: var(--sp-6); } }
 .as-total { font-size: var(--fs-hero); font-weight: 760; letter-spacing: -0.03em; line-height: 1.15; }
 .as-sub { display: flex; gap: var(--sp-4); flex-wrap: wrap; font-size: 15px; margin-top: var(--sp-2); font-weight: 600; }
+.as-title { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.as-title .nm { font-size: var(--fs-title); font-weight: 720; }
+.as-title .btn { margin-left: auto; }
+.as-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-3) var(--sp-5); }
+.as-totals .lb { font-size: var(--fs-caption); color: var(--text-3); margin-bottom: 2px; }
+.as-total.usd { color: var(--text-1); }
+.as-split { margin-top: var(--sp-3); }
+.cur-bar { display: flex; height: 8px; border-radius: var(--r-pill); overflow: hidden; background: var(--bg-sunken); }
+.cur-bar span:first-child { background: var(--series-1); }
+.cur-bar span:last-child { background: var(--series-2); }
+.cur-legend { display: flex; flex-wrap: wrap; gap: 4px var(--sp-4); margin-top: 6px; font-size: var(--fs-label); color: var(--text-2); }
+.cur-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.cur-legend i.k { background: var(--series-1); }
+.cur-legend i.u { background: var(--series-2); }
+.cur-legend b { color: var(--text-1); }
+.fx-line { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-3); font-size: var(--fs-caption); color: var(--text-3); }
+.fx-line b { color: var(--text-1); }
+.acct .nm { font-weight: 680; margin-top: 2px; }
+@media (max-width: 640px) { #ownerChips { flex: 1 1 100%; } }
+.new-acc { margin-top: var(--sp-2); padding: var(--sp-3); border: 1px dashed var(--border); border-radius: var(--r-ctrl); }
 .segbar { display: flex; height: 28px; border-radius: 6px; overflow: hidden; margin: var(--sp-3) 0 var(--sp-2); }
 .segbar span { display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; overflow: hidden; white-space: nowrap; min-width: 2px; border-right: 2px solid var(--bg-surface); }
 .segbar span:last-child { border-right: 0; }

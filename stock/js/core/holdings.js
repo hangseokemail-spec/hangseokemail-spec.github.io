@@ -49,7 +49,34 @@ export function matchName(name, ticker) {
 }
 
 export function infoOf(key) { return assetInfo(key) || krAll?.get(key) || null; }
-export function fxNow() { const f = assetInfo('FX_USDKRW'); return { now: f?.p || 1400, prev: f?.pp || f?.p || 1400 }; }
+// 환율: 기본은 시세 DB의 최근 값. '지금 환율로 다시 계산'을 누르면 그 순간 가장 최신 값을 골라 고정한다.
+let fxPicked = null;
+export function fxNow() {
+  if (fxPicked) return fxPicked;
+  const f = assetInfo('FX_USDKRW');
+  return { now: f?.p || 1400, prev: f?.pp || f?.p || 1400, date: f?.e || null, src: '시세 DB', at: null };
+}
+const ymdNum = (d) => d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+/** 버튼을 누른 순간의 환율: 시세 DB 다시 받기 + 공개 환율 API 중 날짜가 더 최신인 값 */
+export async function refreshFx() {
+  const base = fxNow();
+  const cands = [];
+  try {
+    const r = await fetch(new URL(`../../data/universe.json?t=${Date.now()}`, import.meta.url), { cache: 'no-store' });
+    const j = await r.json();
+    const it = (j.items || []).find((x) => x.k === 'FX_USDKRW');
+    if (it?.p) cands.push({ now: it.p, prev: it.pp || it.p, date: it.e || null, src: '시세 DB' });
+  } catch { /* 오프라인 */ }
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/USD', { cache: 'no-store' });
+    const j = await r.json();
+    const k = j?.rates?.KRW;
+    if (k > 0) cands.push({ now: Math.round(k * 100) / 100, prev: base.prev, date: j.time_last_update_unix ? ymdNum(new Date(j.time_last_update_unix * 1000)) : null, src: '공개 환율(open.er-api)' });
+  } catch { /* 막힘 */ }
+  const best = cands.sort((a, b) => (b.date || 0) - (a.date || 0))[0] || base;
+  fxPicked = { ...best, at: Date.now() };
+  return fxPicked;
+}
 
 /** 종목 노출 분류(국가·통화·자산군·섹터) */
 export function exposure(key, name = '') {
@@ -98,7 +125,14 @@ export function valuate(h, filter = {}) {
   rows.sort((a, b) => b.value - a.value);
   const cost = rows.reduce((t, r) => t + (r.cost ?? r.value), 0);
   const day = rows.reduce((t, r) => t + r.dayChange, 0);
-  return { rows, total, cost, pl: total - cost, plPct: cost ? total / cost - 1 : null, day, dayPct: total - day ? day / (total - day) : null, accounts: accs, fx };
+  // 수익률은 평균단가를 아는 종목만으로(모르는 종목을 0%로 섞으면 수익률이 묽어짐)
+  const known = rows.filter((r) => !r.isCash && r.cost != null && r.cost > 0);
+  const kCost = known.reduce((t, r) => t + r.cost, 0), kVal = known.reduce((t, r) => t + r.value, 0);
+  const noAvg = rows.filter((r) => !r.isCash && r.cost == null).length;
+  // 통화별 합계(종목이 거래되는 통화 기준: 미국 상장·달러 현금 = 달러, 나머지 = 원화)
+  const usdKRW = rows.filter((r) => r.cur === 'USD').reduce((t, r) => t + r.value, 0);
+  const byCur = { KRW: total - usdKRW, USDinKRW: usdKRW, USD: usdKRW / fx.now };
+  return { rows, total, cost, pl: kVal - kCost, plPct: kCost ? kVal / kCost - 1 : null, plCoverage: { n: known.length, noAvg }, day, dayPct: total - day ? day / (total - day) : null, accounts: accs, fx, byCur };
 }
 
 /** 같은 종목 합치기(계좌 무관) */
@@ -133,7 +167,7 @@ export async function dividendForecast(rows) {
       const next = new Date(d.getTime() + 365 * 864e5);
       byMonth[next.getMonth()] += amt;
       annual += amt;
-      events.push({ key: r.key, name: r.name, date: next, amt, perShare: px.div[i], cur: r.cur });
+      events.push({ key: r.key, name: r.name, account: r.account, accounts: r.accounts, date: next, amt, perShare: px.div[i], cur: r.cur });
     }
   }
   events.sort((a, b) => a.date - b.date);

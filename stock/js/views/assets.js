@@ -3,7 +3,7 @@ import { $, $$, el, store, toast, sheet, settings, saveSettings, moneyHints } fr
 import { fmtKRW, fmtKRWShort, fmtUSD, fmtPct, fmtPp, fmtPrice, esc, dirClass, arrow, krRead, krReadUSD } from '../ui/format.js';
 import { donut, treemap, barChart, lineChart, catColor, css, isMobile } from '../ui/charts.js';
 import { searchAssets, assetInfo } from '../core/data.js';
-import { ACCOUNT_TYPES, typeLabel, loadHoldings, saveHoldings, uid, ensureKrAll, matchName, infoOf, valuate, mergeByKey, dividendForecast, riskCheck, rebalanceOrders, toBacktestAssets, fxNow, exposure } from '../core/holdings.js';
+import { ACCOUNT_TYPES, typeLabel, loadHoldings, saveHoldings, uid, ensureKrAll, matchName, infoOf, valuate, mergeByKey, dividendForecast, riskCheck, rebalanceOrders, toBacktestAssets, fxNow, refreshFx, exposure } from '../core/holdings.js';
 import { hasKey, aiReadHoldings } from '../core/ai.js';
 import { kindLabel, requestTicker } from './backtest.js';
 import { todayYm, ymAdd, ymToIso } from '../core/dates.js';
@@ -52,19 +52,22 @@ function render() {
   takeSnapshot();
   root.innerHTML = `
     <div class="row" style="margin-bottom:12px">
-      <div class="chips scroll" id="ownerChips" style="flex:1">
-        <button class="chip" type="button" data-o="all" aria-pressed="${filter.owner === 'all' && !filter.account}">모아보기</button>
-        ${owners().map((o) => `<button class="chip" type="button" data-o="${esc(o)}" aria-pressed="${filter.owner === o && !filter.account}">${esc(o)}</button>`).join('')}
-        ${filter.account ? `<button class="chip on" type="button" data-o="acc">${esc(accName(H.accounts.find((a) => a.id === filter.account)))} ×</button>` : ''}
+      <div class="chips scroll" id="ownerChips" style="flex:1" aria-label="보기 고르기">
+        <button class="chip" type="button" data-o="all" aria-pressed="${filter.owner === 'all' && !filter.account}">모아보기${H.accounts.length > 1 ? ` <span class="faint">${H.accounts.length}개 계좌</span>` : ''}</button>
+        ${owners().length > 1 ? owners().map((o) => `<button class="chip" type="button" data-o="${esc(o)}" aria-pressed="${filter.owner === o && !filter.account}">${esc(o)} 전체</button>`).join('') : ''}
+        ${H.accounts.map((a) => `<button class="chip acc-chip" type="button" data-accchip="${a.id}" aria-pressed="${filter.account === a.id}">${esc(accName(a))}</button>`).join('')}
+        <button class="chip" type="button" id="newAccChip">+ 계좌</button>
       </div>
       <div class="seg" id="curSeg"><button type="button" data-v="KRW" aria-pressed="${!showUsd}">원화</button><button type="button" data-v="USD" aria-pressed="${showUsd}">달러</button></div>
       <button class="icon-btn" type="button" id="eyeBtn" aria-label="금액 숨기기" title="금액 숨기기"><svg viewBox="0 0 24 24">${hide() ? '<path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3 4.2M6.6 6.6A13 13 0 0 0 2 12c1 2.5 5 7 10 7a9.9 9.9 0 0 0 4.4-1"/>' : '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'}</svg></button>
-      <button class="btn" type="button" id="capBtn">캡처 올리기</button><button class="btn primary" type="button" id="addBtn">+ 직접 추가</button>
+      <button class="btn" type="button" id="capBtn">캡처 올리기</button><button class="btn primary" type="button" id="addBtn">+ 종목 추가</button>
     </div>
     <div class="seg" id="segTabs" style="margin-bottom:14px">${[['summary', '현황'], ['list', '종목'], ['risk', '위험'], ['history', '기록']].map(([k, l]) => `<button type="button" data-v="${k}" aria-pressed="${seg === k}">${l}</button>`).join('')}</div>
     <div id="segBody"></div>
-    <p class="cap" style="margin-top:16px">입력한 자산은 이 기기 브라우저에만 저장돼요. 서버로 보내지 않아요. 기기를 바꾸려면 설정에서 백업 파일을 내보내세요.</p>`;
-  $$('#ownerChips [data-o]', root).forEach((b) => { b.onclick = () => { if (b.dataset.o === 'acc') filter.account = null; else { filter = { owner: b.dataset.o, account: null }; } render(); }; });
+    <p class="cap" style="margin-top:16px">자산은 계정마다 암호화해서 저장해요. 로그인하면 다른 기기에서도 보이고, 운영자도 내용을 볼 수 없어요.</p>`;
+  $$('#ownerChips [data-o]', root).forEach((b) => { b.onclick = () => { filter = { owner: b.dataset.o, account: null }; render(); }; });
+  $$('#ownerChips [data-accchip]', root).forEach((b) => { b.onclick = () => { filter = { owner: 'all', account: b.dataset.accchip }; render(); }; });
+  $('#newAccChip', root).onclick = () => openAccount(null, (a) => { filter = { owner: 'all', account: a.id }; render(); toast(`‘${a.name}’ 계좌를 만들었어요. 캡처를 올리거나 종목을 추가하세요.`); });
   $$('#curSeg button', root).forEach((b) => { b.onclick = () => { showUsd = b.dataset.v === 'USD'; render(); }; });
   $('#eyeBtn', root).onclick = () => { saveSettings({ hideAmounts: !hide() }); render(); };
   $('#capBtn', root).onclick = openCapture;
@@ -72,15 +75,17 @@ function render() {
   $$('#segTabs button', root).forEach((b) => { b.onclick = () => { seg = b.dataset.v; render(); }; });
   ({ summary: renderSummary, list: renderList, risk: renderRisk, history: renderHistory })[seg]();
 }
-const accName = (a) => (a ? `${a.owner || '나'} · ${a.name || typeLabel(a.type)}` : '');
+const alias = (a) => (a ? a.name || typeLabel(a.type) || '계좌' : '');
+const accName = (a) => (a ? (owners().length > 1 ? `${a.owner || '나'} · ${alias(a)}` : alias(a)) : '');
 
 function renderEmpty() {
   root.innerHTML = `<div class="surface empty"><h1 class="page-title">아직 등록한 자산이 없어요</h1>
     <p>계좌 캡처를 올리면 종목을 읽어 확인 표로 보여주고, 직접 입력할 수도 있어요.</p>
-    <div class="row" style="justify-content:center"><button class="btn primary" type="button" id="e_cap">계좌 캡처 올리기</button><button class="btn" type="button" id="e_add">직접 입력</button><button class="btn ghost" type="button" id="e_demo">예시 자산으로 둘러보기</button></div>
-    <p class="cap" style="margin-top:16px">입력한 자산은 이 기기 브라우저에만 저장돼요. 서버로 보내지 않아요.</p></div>`;
+    <div class="row" style="justify-content:center"><button class="btn primary" type="button" id="e_cap">계좌 캡처 올리기</button><button class="btn" type="button" id="e_acc">계좌 먼저 만들기</button><button class="btn" type="button" id="e_add">종목 직접 입력</button><button class="btn ghost" type="button" id="e_demo">예시 자산으로 둘러보기</button></div>
+    <p class="cap" style="margin-top:16px">자산은 계정마다 암호화해서 저장해요. 운영자도 내용을 볼 수 없어요.</p></div>`;
   $('#e_cap', root).onclick = openCapture;
   $('#e_add', root).onclick = () => openAddHolding();
+  $('#e_acc', root).onclick = () => openAccount(null, (a) => { filter = { owner: 'all', account: a.id }; render(); toast(`‘${a.name}’ 계좌를 만들었어요. 캡처를 올리거나 종목을 추가하세요.`); });
   $('#e_demo', root).onclick = () => {
     const a1 = { id: uid(), owner: '나', type: 'overseas', broker: '예시증권', name: '해외주식', cash: { USD: 500 } };
     const a2 = { id: uid(), owner: '나', type: 'pension', broker: '예시증권', name: '연금저축', cash: { KRW: 300000 } };
@@ -103,9 +108,15 @@ async function renderSummary() {
   B.innerHTML = `
     <div class="surface">
       <div class="as-head">
-        <div class="cap">${filter.account ? esc(accName(H.accounts.find((a) => a.id === filter.account))) : filter.owner === 'all' ? '가족 전체' : `${esc(filter.owner)}님`} 총자산 · 환율 ${v.fx.now.toLocaleString('ko-KR')}원</div>
-        <div class="as-total">${m2(v.total)}</div>${hide() ? '' : `<div class="kr-read big">${esc(showUsd ? krReadUSD(v.total / v.fx.now, v.fx.now) : krRead(v.total, 'KRW', false))}</div>`}
-        <div class="as-sub"><span class="${dirClass(v.day)}">오늘 ${hide() ? '•••' : fmtKRW(v.day, { plus: true })} (${fmtPct(v.dayPct, 2, true)}) ${arrow(v.day)}</span><span class="${dirClass(v.pl)}">전체 ${hide() ? '•••' : fmtKRW(v.pl, { plus: true })} (${fmtPct(v.plPct, 1, true)})</span></div>
+        ${headTitle()}
+        <div class="as-totals">
+          <div><div class="lb">원화로 환산한 총액</div><div class="as-total">${money(v.total)}</div></div>
+          <div><div class="lb">달러로 환산한 총액</div><div class="as-total usd">${hide() ? '•••' : fmtUSD(v.total / v.fx.now)}</div>${hide() ? '' : `<div class="kr-read big">${esc(krRead(v.total / v.fx.now, 'USD'))}</div>`}</div>
+        </div>
+        <div class="as-split">${curSplit(v)}</div>
+        <div class="as-sub"><span class="${dirClass(v.pl)}">수익률 ${fmtPct(v.plPct, 1, true)} ${arrow(v.pl)} <span class="faint">평가손익 ${hide() ? '•••' : fmtKRW(v.pl, { plus: true })}</span></span><span class="${dirClass(v.day)}">오늘 ${hide() ? '•••' : fmtKRW(v.day, { plus: true })} (${fmtPct(v.dayPct, 2, true)}) ${arrow(v.day)}</span></div>
+        ${v.plCoverage?.noAvg ? `<p class="cap" style="margin:4px 0 0">평균단가가 없는 종목 ${v.plCoverage.noAvg}개는 수익률에서 뺐어요. 종목 탭에서 평균단가를 넣으면 더해져요.</p>` : ''}
+        <div class="fx-line"><span>환율 <b>${v.fx.now.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원</b> · ${esc(fxWhen(v.fx))}</span><button class="btn small ghost" type="button" id="fxBtn">지금 환율로 다시 계산</button></div>
         <div class="facts" style="margin:16px 0 0" id="divFacts"><div class="fact"><div class="lb">연간 예상 배당금</div><div class="v">…</div></div></div>
       </div>
       <div class="section" id="riskLine"><span class="cap">위험 점검 중…</span></div>
@@ -118,33 +129,43 @@ async function renderSummary() {
       </div>
       <div class="section"><div class="section-title">예상 배당금 <span class="cap" id="divYear"></span><span class="spacer"></span><div class="seg" id="taxSeg"><button type="button" data-v="1" aria-pressed="${afterTax}">세후</button><button type="button" data-v="0" aria-pressed="${!afterTax}">세전</button></div></div>
         <div class="readout" id="divReadout"></div><div class="chart short" id="divChart"></div><div id="divCal"></div></div>
-      <div class="section"><div class="section-title">계좌 <span class="spacer"></span><button class="btn small" type="button" id="addAcc">+ 계좌 추가</button></div><div class="acct-cards" id="accCards"></div></div>
+      ${filter.account ? '' : `<div class="section"><div class="section-title">계좌별 한눈에 <span class="cap">눌러서 그 계좌만 보기</span><span class="spacer"></span><button class="btn small" type="button" id="addAcc">+ 계좌</button></div><div class="acct-cards" id="accCards"></div></div>`}
       <div class="section row"><button class="btn" type="button" id="toBt">이 구성으로 백테스트</button><button class="btn ghost" type="button" id="toPlan">목표·노후에 연결</button></div>
     </div>`;
   $$('#compMode button', B).forEach((b) => { b.onclick = () => { compMode = b.dataset.v; renderSummary(); }; });
   $$('#chartMode button', B).forEach((b) => { b.onclick = () => { chartMode = b.dataset.v; renderSummary(); }; });
   $$('#compBy button', B).forEach((b) => { b.onclick = () => { compBy = b.dataset.v; renderSummary(); }; });
   $$('#taxSeg button', B).forEach((b) => { b.onclick = () => { afterTax = b.dataset.v === '1'; renderSummary(); }; });
-  $('#addAcc', B).onclick = () => openAccount();
+  $('#addAcc', B)?.addEventListener('click', () => openAccount(null, (a) => { filter = { owner: 'all', account: a.id }; render(); }));
+  $('#editAcc', B)?.addEventListener('click', () => openAccount(H.accounts.find((a) => a.id === filter.account)));
+  $('#fxBtn', B).onclick = async (e) => { const b = e.currentTarget; b.disabled = true; b.textContent = '환율 받는 중…'; const f = await refreshFx(); render(); toast(`환율 ${f.now.toLocaleString('ko-KR')}원(${fxWhen(f)})으로 다시 계산했어요.`); };
   $('#toBt', B).onclick = toBacktest;
   $('#toPlan', B).onclick = () => { location.hash = '#plan'; toast('목표·노후 탭의 ‘지금 자산과 적립’에서 ‘내 자산에서 불러오기’를 누르면 이 금액이 들어가요. 실제 기록은 자동으로 이어져요.'); };
-  // 계좌 카드
-  const accs = v.accounts;
-  $('#accCards', B).innerHTML = accs.map((a) => {
-    const ar = v.rows.filter((r) => r.account === a.id);
-    const tot = ar.reduce((t, r) => t + r.value, 0), cost = ar.reduce((t, r) => t + (r.cost ?? r.value), 0);
-    const seg2 = mergeByKey(ar).slice(0, 6);
-    return `<button class="acct" type="button" data-acc="${a.id}"><div class="who">${esc(a.owner || '나')} · ${esc(typeLabel(a.type))}${a.broker ? ` · ${esc(a.broker)}` : ''}</div><div class="amt">${m2(tot)}</div><div class="pl ${dirClass(tot - cost)}">${hide() ? '' : fmtKRW(tot - cost, { plus: true })} ${arrow(tot - cost)} · ${ar.filter((r) => !r.isCash).length}종목</div>
-      <div class="segbar" style="height:6px;margin:8px 0 0">${seg2.map((r) => `<span style="flex:${r.value};background:${colorFor(r.key)}"></span>`).join('')}</div></button>`;
-  }).join('');
-  $$('[data-acc]', B).forEach((b) => { b.onclick = () => { filter = { owner: 'all', account: b.dataset.acc }; render(); }; b.oncontextmenu = (e) => { e.preventDefault(); openAccount(H.accounts.find((a) => a.id === b.dataset.acc)); }; });
-  // 배당
-  const dv = await dividendForecast(rows);
+  // 배당(계좌별로도 나누려고 합치기 전 행으로 계산)
+  const dvRaw = await dividendForecast(v.rows);
+  const dv = { ...dvRaw, events: mergeEvents(dvRaw.events) };
+  // 계좌별 한눈에(모아보기)
+  if (!filter.account) {
+    const accs = v.accounts;
+    $('#accCards', B).innerHTML = accs.map((a) => {
+      const ar = v.rows.filter((r) => r.account === a.id);
+      const tot = ar.reduce((t, r) => t + r.value, 0);
+      const known = ar.filter((r) => !r.isCash && r.cost > 0), kc = known.reduce((t, r) => t + r.cost, 0), kv = known.reduce((t, r) => t + r.value, 0);
+      const ret = kc ? kv / kc - 1 : null;
+      const div = dvRaw.events.filter((e) => e.account === a.id).reduce((t, e) => t + e.amt * (afterTax ? 1 - (assetInfo(e.key)?.m === 'US' ? 0.15 : 0.154) : 1), 0);
+      const seg2 = mergeByKey(ar).slice(0, 6);
+      return `<button class="acct" type="button" data-acc="${a.id}"><div class="who">${owners().length > 1 ? `${esc(a.owner || '나')} · ` : ''}${esc(typeLabel(a.type))} · 비중 ${fmtPct(v.total ? tot / v.total : null, 0)}</div><div class="nm">${esc(alias(a))}</div><div class="amt">${m2(tot)}</div>
+        <div class="pl"><span class="${dirClass(ret)}">${ret == null ? '수익률 –' : `수익률 ${fmtPct(ret, 1, true)} ${arrow(ret)}`}</span> · ${ar.filter((r) => !r.isCash).length}종목</div>
+        <div class="cap">연 배당 ${money(div)}</div>
+        <div class="segbar" style="height:6px;margin:8px 0 0">${seg2.map((r) => `<span style="flex:${r.value};background:${colorFor(r.key)}"></span>`).join('')}</div></button>`;
+    }).join('') || '<p class="cap">아직 계좌가 없어요.</p>';
+    $$('[data-acc]', B).forEach((b) => { b.onclick = () => { filter = { owner: 'all', account: b.dataset.acc }; render(); }; b.oncontextmenu = (e) => { e.preventDefault(); openAccount(H.accounts.find((a) => a.id === b.dataset.acc)); }; });
+  }
   const taxOf = (key) => (assetInfo(key)?.m === 'US' ? 0.15 : 0.154);
   const tax = (amt, key) => (afterTax ? amt * (1 - taxOf(key)) : amt);
   const byMonth = Array(12).fill(0); let annual = 0;
   dv.events.forEach((e) => { const a = tax(e.amt, e.key); byMonth[e.date.getMonth()] += a; annual += a; });
-  const cost = rows.reduce((t, r) => t + (r.cost ?? r.value), 0);
+  const cost = rows.filter((r) => !r.isCash).reduce((t, r) => t + (r.cost ?? r.value), 0);
   $('#divFacts', B).innerHTML = `<div class="fact"><div class="lb">연간 예상 배당금(${afterTax ? '세후' : '세전'})</div><div class="v">${money(annual)}</div><div class="cap">월평균 ${money(annual / 12)}</div></div>
     <div class="fact"><div class="lb">투자 배당률</div><div class="v">${fmtPct(cost ? annual / cost : null, 2)}</div><div class="cap">매입 원금 대비</div></div>
     <div class="fact"><div class="lb">시가 배당률</div><div class="v">${fmtPct(v.total ? annual / v.total : null, 2)}</div><div class="cap">지금 평가액 대비</div></div>`;
@@ -168,6 +189,32 @@ async function renderSummary() {
   $('#goRisk', B).onclick = () => { seg = 'risk'; render(); };
 }
 
+/** 같은 종목·같은 날 배당은 한 줄로(여러 계좌에 나눠 든 경우) */
+function mergeEvents(events) {
+  const m = new Map();
+  for (const e of events) { const k = `${e.key}|${+e.date}`; const o = m.get(k); if (o) o.amt += e.amt; else m.set(k, { ...e }); }
+  return [...m.values()].sort((a, b) => a.date - b.date);
+}
+function fxWhen(f) {
+  const d = f?.date ? `${String(f.date).slice(0, 4)}.${String(f.date).slice(4, 6)}.${String(f.date).slice(6, 8)}` : '날짜 모름';
+  const at = f?.at ? ` · ${new Date(f.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}에 다시 받음` : '';
+  return `${d} 기준(${f?.src || '시세 DB'})${at}`;
+}
+function headTitle() {
+  if (filter.account) {
+    const a = H.accounts.find((x) => x.id === filter.account);
+    return `<div class="as-title"><span class="nm">${esc(alias(a))}</span><span class="cap">${owners().length > 1 ? `${esc(a?.owner || '나')} · ` : ''}${esc(typeLabel(a?.type))}</span><button class="btn small ghost" type="button" id="editAcc">계좌 고치기 · 현금</button></div>`;
+  }
+  return `<div class="as-title"><span class="nm">${filter.owner === 'all' ? '모아보기' : `${esc(filter.owner)} 전체`}</span><span class="cap">${view.accounts.length}개 계좌</span></div>`;
+}
+function curSplit(v) {
+  if (hide()) return '';
+  const krw = v.byCur?.KRW || 0, usd = v.byCur?.USD || 0;
+  if (!krw || !usd) return `<span class="cap">${usd ? '모두 달러 자산' : '모두 원화 자산'}</span>`;
+  const pk = v.total ? krw / v.total : 0;
+  return `<div class="cur-bar" aria-hidden="true"><span style="flex:${krw}"></span><span style="flex:${v.byCur.USDinKRW}"></span></div>
+    <div class="cur-legend"><span><i class="k"></i>원화 자산 <b>${fmtKRW(krw)}</b> ${fmtPct(pk, 0)}</span><span><i class="u"></i>달러 자산 <b>${fmtUSD(usd)}</b> <span class="faint">(${fmtKRWShort(v.byCur.USDinKRW)})</span> ${fmtPct(1 - pk, 0)}</span></div>`;
+}
 function groupKey(r) {
   if (compBy === 'name') return [r.key, r.name];
   if (compBy === 'account') { const a = H.accounts.find((x) => x.id === r.account); return [r.account, accName(a)]; }
@@ -346,35 +393,59 @@ function renderHistory() {
 }
 
 // ------------------------------------------------------------------ 입력 시트
-function accountOptions(sel) { return H.accounts.map((a) => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(accName(a))}</option>`).join('') + '<option value="__new">+ 새 계좌</option>'; }
+function accountOptions(sel) {
+  const opts = H.accounts.map((a) => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(accName(a))}</option>`).join('');
+  return opts + `<option value="__new" ${sel === '__new' || !H.accounts.length ? 'selected' : ''}>+ 새 계좌 만들기</option>`;
+}
+const ownerDatalist = (id) => `<datalist id="${id}">${[...new Set(['나', '배우자', '자녀1', '자녀2', ...owners()])].map((o) => `<option>${esc(o)}</option>`).join('')}</datalist>`;
+/** 별칭으로 계좌 종류 짐작(바꿀 수 있음) */
+function guessType(name) {
+  const n = String(name || '');
+  return /연금|저축/.test(n) ? 'pension' : /isa/i.test(n) ? 'isa' : /irp/i.test(n) ? 'irp' : /dc|퇴직/i.test(n) ? 'dc' : /cma|현금/i.test(n) ? 'cma' : /해외|미국|달러|외화/.test(n) ? 'overseas' : 'other';
+}
+/** 다른 창 안에서 바로 새 계좌 만들기(창을 겹쳐 열지 않음) */
+function newAccFields(prefix, show, defName) {
+  return `<div class="grid2 new-acc" id="${prefix}_new" ${show ? '' : 'hidden'}><label class="field">새 계좌 별칭<input class="input" id="${prefix}_nname" value="${esc(defName || '')}" placeholder="예: 미국주식, 연금저축" maxlength="20"></label><label class="field">누구 계좌<input class="input" id="${prefix}_nowner" value="${esc(owners()[0] || '나')}" list="${prefix}_owners">${ownerDatalist(`${prefix}_owners`)}</label></div>`;
+}
+function wireAccSelect(root, sel, prefix) { sel.addEventListener('change', () => { $(`#${prefix}_new`, root).hidden = sel.value !== '__new'; if (sel.value === '__new') $(`#${prefix}_nname`, root).focus(); }); }
+function createFromFields(root, prefix) {
+  const name = $(`#${prefix}_nname`, root).value.trim() || `계좌 ${H.accounts.length + 1}`;
+  const a = { id: uid(), owner: $(`#${prefix}_nowner`, root).value.trim() || '나', type: guessType(name), name, cash: {} };
+  H.accounts.push(a);
+  return a;
+}
 function openAccount(acc = null, onDone = null) {
-  const a = acc || { id: uid(), owner: owners()[0] || '나', type: 'general', broker: '', name: '', cash: {} };
+  const a = acc || { id: uid(), owner: owners()[0] || '나', type: 'other', name: '', cash: {} };
   const s = sheet(`<h3>${acc ? '계좌 고치기' : '새 계좌'}</h3><div class="stack">
-    <div class="grid2"><label class="field">소유자<input class="input" id="a_owner" value="${esc(a.owner || '나')}" list="ownerList"><datalist id="ownerList">${['나', '배우자', '자녀1', '자녀2', ...owners()].map((o) => `<option>${esc(o)}</option>`).join('')}</datalist></label>
-    <label class="field">계좌 유형<select class="input" id="a_type">${ACCOUNT_TYPES.map(([k, l]) => `<option value="${k}" ${a.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
-    <div class="grid2"><label class="field">증권사(선택)<input class="input" id="a_broker" value="${esc(a.broker || '')}"></label><label class="field">별칭(선택)<input class="input" id="a_name" value="${esc(a.name || '')}"></label></div>
-    <div class="grid2"><label class="field">원화 현금<div class="input-unit"><input class="input num" id="a_krw" value="${a.cash?.KRW || ''}" inputmode="numeric" data-money="KRW"><span>원</span></div></label><label class="field">달러 현금<div class="input-unit"><input class="input num" id="a_usd" value="${a.cash?.USD || ''}" inputmode="decimal" data-money="USD"><span>$</span></div></label></div>
+    <label class="field">계좌 별칭<input class="input" id="a_name" value="${esc(a.name || '')}" placeholder="예: 미국주식, 연금저축, 아이 ISA" maxlength="20"></label>
+    <div class="grid2"><label class="field">누구 계좌<input class="input" id="a_owner" value="${esc(a.owner || '나')}" list="ownerList">${ownerDatalist('ownerList')}</label>
+    <label class="field">종류(선택)<select class="input" id="a_type">${ACCOUNT_TYPES.map(([k, l]) => `<option value="${k}" ${a.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    <div class="grid2"><label class="field">원화 현금(예수금)<div class="input-unit"><input class="input num" id="a_krw" value="${a.cash?.KRW || ''}" inputmode="numeric" data-money="KRW"><span>원</span></div></label><label class="field">달러 현금<div class="input-unit"><input class="input num" id="a_usd" value="${a.cash?.USD || ''}" inputmode="decimal" data-money="USD"><span>$</span></div></label></div>
+    <p class="cap">증권사 이름은 없어도 돼요. 별칭만 있으면 구분돼요. 누구 계좌를 다르게 넣으면 모아보기에서 사람별로도 볼 수 있어요.</p>
   </div><div class="actions">${acc ? '<button class="btn ghost" type="button" data-del>계좌 삭제</button>' : ''}<button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>저장</button></div>`);
+  const nm = $('#a_name', s.root);
+  if (!acc) nm.addEventListener('input', () => { $('#a_type', s.root).value = guessType(nm.value); });
   $('[data-close]', s.root).onclick = s.close;
-  $('[data-del]', s.root)?.addEventListener('click', () => { if (!confirm('이 계좌와 안의 종목을 모두 지울까요?')) return; H.accounts = H.accounts.filter((x) => x.id !== a.id); H.holdings = H.holdings.filter((h) => h.account !== a.id); save(); s.close(); filter.account = null; render(); });
+  $('[data-del]', s.root)?.addEventListener('click', () => { if (!confirm('이 계좌와 안의 종목을 모두 지울까요?')) return; H.accounts = H.accounts.filter((x) => x.id !== a.id); H.holdings = H.holdings.filter((h) => h.account !== a.id); save(); s.close(); filter = { owner: 'all', account: null }; render(); });
   $('[data-ok]', s.root).onclick = () => {
-    Object.assign(a, { owner: $('#a_owner', s.root).value || '나', type: $('#a_type', s.root).value, broker: $('#a_broker', s.root).value, name: $('#a_name', s.root).value, cash: { KRW: +$('#a_krw', s.root).value.replace(/[^\d.]/g, '') || 0, USD: +$('#a_usd', s.root).value.replace(/[^\d.]/g, '') || 0 } });
+    const type = $('#a_type', s.root).value;
+    Object.assign(a, { owner: $('#a_owner', s.root).value.trim() || '나', type, name: nm.value.trim() || (type !== 'other' ? typeLabel(type) : `계좌 ${H.accounts.length + (acc ? 0 : 1)}`), cash: { KRW: +$('#a_krw', s.root).value.replace(/[^\d.]/g, '') || 0, USD: +$('#a_usd', s.root).value.replace(/[^\d.]/g, '') || 0 } });
     if (!acc) H.accounts.push(a);
     delete H.demo; save(); s.close(); onDone ? onDone(a) : render();
   };
 }
 function manageAccounts() {
-  const s = sheet(`<h3>계좌 관리</h3><div class="stack">${H.accounts.map((a) => `<button class="acct" type="button" data-a="${a.id}"><div class="who">${esc(a.owner)} · ${esc(typeLabel(a.type))}</div><div>${esc(a.name || '')} ${esc(a.broker || '')}</div></button>`).join('')}<button class="btn" type="button" id="ma_new">+ 새 계좌</button></div><div class="actions"><button class="btn" type="button" data-close>닫기</button></div>`);
+  const s = sheet(`<h3>계좌 관리</h3><div class="stack">${H.accounts.map((a) => `<button class="acct" type="button" data-a="${a.id}"><div class="who">${esc(a.owner || '나')} · ${esc(typeLabel(a.type))}</div><div class="nm">${esc(alias(a))}</div></button>`).join('')}<button class="btn" type="button" id="ma_new">+ 새 계좌</button></div><div class="actions"><button class="btn" type="button" data-close>닫기</button></div>`);
   $('[data-close]', s.root).onclick = s.close;
   $$('[data-a]', s.root).forEach((b) => { b.onclick = () => { s.close(); openAccount(H.accounts.find((a) => a.id === b.dataset.a)); }; });
   $('#ma_new', s.root).onclick = () => { s.close(); openAccount(); };
 }
 function openAddHolding(hold = null) {
-  if (!H.accounts.length) { openAccount(null, () => openAddHolding()); return; }
-  const h = hold || { id: uid(), account: filter.account || H.accounts[0].id, key: '', qty: 0, avg: null, cur: 'KRW', target: null };
+  const h = hold || { id: uid(), account: filter.account || H.accounts[0]?.id || '__new', key: '', qty: 0, avg: null, cur: 'KRW', target: null };
   const it = h.key ? infoOf(h.key) : null;
   const s = sheet(`<h3>${hold ? '종목 고치기' : '종목 추가'}</h3><div class="stack">
     <label class="field">계좌<select class="input" id="h_acc">${accountOptions(h.account)}</select></label>
+    ${newAccFields('h', h.account === '__new' || !H.accounts.length, H.accounts.length ? '' : '내 계좌')}
     <label class="field">종목<div class="search"><input class="input" id="h_search" placeholder="이름·티커·코드(예: 엔비디아, QQQM, 390390)" autocomplete="off" value="${esc(it?.n || h.name || '')}"><ul class="search-list" hidden></ul></div></label>
     <p class="cap" id="h_pick">${h.key ? `${esc(h.key)} · ${it ? kindLabel(it) : 'DB에 없음'}${it?.p || it?.price ? ` · 최근 ${fmtPrice(it.p || it.price, it.cur)}` : ''}` : '검색해서 고르세요. DB에 없는 국내 종목도 이름이 있으면 시세가 잡혀요.'}</p>
     <div class="grid2"><label class="field">수량<input class="input num" id="h_qty" inputmode="decimal" value="${h.qty || ''}"></label><label class="field">평균단가(선택)<div class="input-unit"><input class="input num" id="h_avg" inputmode="decimal" value="${h.avg || ''}"><span id="h_cur">${h.cur === 'USD' ? '$' : '원'}</span></div></label></div>
@@ -391,14 +462,18 @@ function openAddHolding(hold = null) {
     $$('li[data-k]', list).forEach((li) => { li.onmousedown = (e) => { e.preventDefault(); h.key = li.dataset.k; const i2 = infoOf(h.key); h.cur = i2?.cur || 'KRW'; inp.value = i2?.n || h.key; $('#h_cur', s.root).textContent = h.cur === 'USD' ? '$' : '원'; $('#h_pick', s.root).textContent = `${h.key} · ${i2 ? kindLabel(i2) : ''}${i2?.p || i2?.price ? ` · 최근 ${fmtPrice(i2.p || i2.price, h.cur)}` : ''}`; list.hidden = true; }; });
     $('li[data-req]', list)?.addEventListener('mousedown', (e) => { e.preventDefault(); requestTicker(e.currentTarget.dataset.req); });
   });
-  $('#h_acc', s.root).onchange = (e) => { if (e.target.value === '__new') { s.close(); openAccount(null, (a) => { h.account = a.id; openAddHolding(h); }); } };
+  wireAccSelect(s.root, $('#h_acc', s.root), 'h');
   $('[data-close]', s.root).onclick = s.close;
   $('[data-del]', s.root)?.addEventListener('click', () => { H.holdings = H.holdings.filter((x) => x.id !== h.id); save(); s.close(); render(); });
   $('[data-ok]', s.root).onclick = () => {
     if (!h.key) { toast('종목을 검색해서 골라 주세요.'); return; }
-    Object.assign(h, { account: $('#h_acc', s.root).value, qty: +$('#h_qty', s.root).value || 0, avg: +$('#h_avg', s.root).value || null, target: $('#h_tgt', s.root).value === '' ? null : +$('#h_tgt', s.root).value, manualPrice: +$('#h_mp', s.root).value || null });
+    let accId = $('#h_acc', s.root).value;
+    if (accId === '__new') accId = createFromFields(s.root, 'h').id;
+    Object.assign(h, { account: accId, qty: +$('#h_qty', s.root).value || 0, avg: +$('#h_avg', s.root).value || null, target: $('#h_tgt', s.root).value === '' ? null : +$('#h_tgt', s.root).value, manualPrice: +$('#h_mp', s.root).value || null });
     if (!hold) H.holdings.push(h);
-    delete H.demo; save(); s.close(); render();
+    delete H.demo; save(); s.close();
+    if (!hold) filter = { owner: 'all', account: accId };
+    render();
   };
 }
 
@@ -496,7 +571,7 @@ export function parseOcrText(text) {
   }
   return out;
 }
-function openConfirm(parsed) {
+export function openConfirm(parsed) {
   const fx = fxNow();
   const total = parsed.total || null;
   const rows = (parsed.holdings || []).filter((x) => x.name || x.ticker).map((x) => {
@@ -512,25 +587,45 @@ function openConfirm(parsed) {
     if (!mt || mt.score < 0.8) check = 'low';
     if (qty != null && price && x.value) { const est = qty * price * (it?.cur === 'USD' ? (cur === 'USD' ? 1 : fx.now) : 1); if (Math.abs(est / x.value - 1) > 0.05) check = 'low'; }
     if (qty == null) check = 'low';
-    return { use: true, raw: x.name, key: mt?.k || '', name: it?.n || x.name, qty, avg: x.avgPrice || null, value: x.value, cur: it?.cur || cur, check, isCash: x.isCash, pct: x.weightPct };
+    // 평균단가가 안 보이고 수익률만 보이면 '지금 가격 ÷ (1 + 수익률)'로 추정(고칠 수 있음)
+    const pNow = x.price || price;
+    const avgEst = !x.avgPrice && x.returnPct != null && pNow && x.returnPct > -99 ? pNow / (1 + x.returnPct / 100) : null;
+    const avg = x.avgPrice || (avgEst ? +(avgEst.toFixed((it?.cur || cur) === 'USD' ? 2 : 0)) : null);
+    return { use: true, raw: x.name, key: mt?.k || '', name: it?.n || x.name, qty, avg, avgEst: !!avgEst, value: x.value, cur: it?.cur || cur, check, isCash: x.isCash, pct: x.weightPct };
   });
+  const cashIn = { KRW: 0, USD: 0 };
+  for (const c of parsed.cash || []) if (c?.amount > 0 && (c.currency === 'USD' || c.currency === 'KRW')) cashIn[c.currency] += +c.amount;
+  // 넣을 계좌: 화면의 계좌 이름과 같은 별칭이 있으면 그것, 지금 보는 계좌, 없으면 새 계좌
+  const pName = (parsed.account?.name || '').trim();
+  const sameName = pName && H.accounts.find((a) => (a.name || '').replace(/\s/g, '') === pName.replace(/\s/g, ''));
+  // 화면에 다른 계좌 이름이 보이면 지금 보는 계좌가 아니라 새 계좌가 기본(엉뚱한 계좌를 덮어쓰지 않게)
+  const defAcc = sameName?.id || (pName ? '__new' : filter.account || H.accounts[0]?.id || '__new');
+  const defName = pName || (parsed.account?.broker ? `${parsed.account.broker} 계좌` : H.accounts.length ? '' : '내 계좌');
   const lowN = rows.filter((r) => r.check === 'low').length;
   const s = sheet(`<h3>읽은 내용 확인</h3><p class="cap">${rows.length}줄 인식 · 확인이 필요한 칸 ${lowN}개(노란 칸). 매칭 종목과 수량을 확인한 뒤 반영하세요.${total ? ` 화면 총자산 ${fmtKRW(total)}.` : ''}</p>
-    <div class="grid2"><label class="field">넣을 계좌<select class="input" id="c_acc">${accountOptions(filter.account || H.accounts[0]?.id)}</select></label>
+    <div class="grid2"><label class="field">넣을 계좌<select class="input" id="c_acc">${accountOptions(defAcc)}</select></label>
     <div class="field">반영 방식<div class="seg" id="c_mode"><button type="button" data-v="replace" aria-pressed="true">이 계좌를 이 내용으로 교체</button><button type="button" data-v="add" aria-pressed="false">기존에 더하기</button></div></div></div>
+    ${newAccFields('c', defAcc === '__new', defName)}
+    ${cashIn.KRW || cashIn.USD ? `<label class="toggle" style="margin-top:8px"><input type="checkbox" id="c_cash" checked> 현금도 반영: ${[cashIn.KRW ? `원화 ${fmtKRW(cashIn.KRW)}` : '', cashIn.USD ? `달러 ${fmtUSD(cashIn.USD, { cents: true })}` : ''].filter(Boolean).join(' · ')}</label>` : ''}
     <div class="tbl-wrap" style="margin-top:12px"><table class="tbl ocr-tbl"><thead><tr><th></th><th>읽은 이름</th><th>매칭 종목</th><th class="num">수량</th><th class="num">평균단가</th><th class="num">평가액(읽은 값)</th></tr></thead><tbody>
-    ${rows.map((r, i) => `<tr><td><input type="checkbox" data-use="${i}" ${r.use ? 'checked' : ''}></td><td class="cap">${esc(r.raw)}${r.pct != null ? ` · ${r.pct}%` : ''}</td><td class="${!r.key && !r.isCash ? 'low' : ''}">${r.isCash ? '현금' : `<input class="input" data-key="${i}" value="${esc(r.key)}" style="width:110px" aria-label="종목 코드"> <span class="cap" data-kn="${i}">${esc(r.name)}</span>`}</td><td class="num ${r.check === 'low' ? 'low' : ''}"><input class="input num" data-qty="${i}" value="${r.qty ?? ''}" style="width:96px" aria-label="수량">${r.check === 'low' ? ' <span title="확인 필요">⚠</span>' : ''}</td><td class="num"><input class="input num" data-avg="${i}" value="${r.avg ?? ''}" style="width:96px"></td><td class="num">${r.value != null ? r.value.toLocaleString('ko-KR') : '–'}</td></tr>`).join('')}</tbody></table></div>
+    ${rows.map((r, i) => `<tr><td><input type="checkbox" data-use="${i}" ${r.use ? 'checked' : ''}></td><td class="cap">${esc(r.raw)}${r.pct != null ? ` · ${r.pct}%` : ''}</td><td class="${!r.key && !r.isCash ? 'low' : ''}">${r.isCash ? '현금' : `<input class="input" data-key="${i}" value="${esc(r.key)}" style="width:110px" aria-label="종목 코드"> <span class="cap" data-kn="${i}">${esc(r.name)}</span>`}</td><td class="num ${r.check === 'low' ? 'low' : ''}"><input class="input num" data-qty="${i}" value="${r.qty ?? ''}" style="width:96px" aria-label="수량">${r.check === 'low' ? ' <span title="확인 필요">⚠</span>' : ''}</td><td class="num"><input class="input num" data-avg="${i}" value="${r.avg ?? ''}" style="width:96px"${r.avgEst ? ' title="화면의 수익률로 계산한 값이에요"' : ''}>${r.avgEst ? ' <span class="cap" title="화면의 수익률로 계산">≈</span>' : ''}</td><td class="num">${r.value != null ? r.value.toLocaleString('ko-KR') : '–'}</td></tr>`).join('')}</tbody></table></div>
     ${lowN ? `<p class="sentence-note">⚠ 노란 칸 ${lowN}개를 아직 확인하지 않았어요. 그대로 반영할 수도 있어요.</p>` : ''}
     <div class="actions"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="button" data-ok>확인한 줄 반영</button></div>`, { wide: true });
   $$('#c_mode button', s.root).forEach((b) => { b.onclick = () => $$('#c_mode button', s.root).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
   $$('[data-key]', s.root).forEach((x) => x.addEventListener('change', () => { const i = +x.dataset.key; const m = matchName(null, x.value) || matchName(x.value); rows[i].key = m?.k || x.value.toUpperCase(); const it = infoOf(rows[i].key); rows[i].cur = it?.cur || rows[i].cur; $(`[data-kn="${i}"]`, s.root).textContent = it?.n || '목록에 없음 · 시세 없이 저장'; }));
-  $('#c_acc', s.root).onchange = (e) => { if (e.target.value === '__new') { openAccount(null, (a) => { e.target.innerHTML = accountOptions(a.id); }); } };
+  wireAccSelect(s.root, $('#c_acc', s.root), 'c');
   $('[data-close]', s.root).onclick = s.close;
   $('[data-ok]', s.root).onclick = () => {
-    if (!H.accounts.length) { toast('계좌를 먼저 만들어 주세요.'); return; }
-    const accId = $('#c_acc', s.root).value;
-    const mode = $('#c_mode button[aria-pressed="true"]', s.root).dataset.v;
     const prev = structuredClone(H);
+    let accId = $('#c_acc', s.root).value;
+    if (accId === '__new') accId = createFromFields(s.root, 'c').id;
+    const mode = $('#c_mode button[aria-pressed="true"]', s.root).dataset.v;
+    const acc = H.accounts.find((a) => a.id === accId);
+    if ($('#c_cash', s.root)?.checked && acc) {
+      const c0 = acc.cash || {};
+      // 교체: 캡처에 보인 통화만 바꿈 / 더하기: 더함
+      acc.cash = mode === 'replace' ? { KRW: cashIn.KRW || c0.KRW || 0, USD: cashIn.USD || c0.USD || 0 } : { KRW: (c0.KRW || 0) + cashIn.KRW, USD: (c0.USD || 0) + cashIn.USD };
+    }
     if (mode === 'replace') H.holdings = H.holdings.filter((h) => h.account !== accId);
     let n = 0;
     rows.forEach((r, i) => {
@@ -541,8 +636,9 @@ function openConfirm(parsed) {
       if (ex && mode === 'add') ex.qty += qty; else H.holdings.push({ id: uid(), account: accId, key: r.key, name: r.raw, qty, avg, cur: r.cur });
       n++;
     });
-    delete H.demo; save(); s.close(); render();
-    toast(`${n}줄을 반영했어요.`, { label: '되돌리기', fn: () => { H = prev; saveHoldings(H); render(); } });
+    delete H.demo; save(); s.close();
+    filter = { owner: 'all', account: accId }; seg = 'summary'; render();
+    toast(`‘${alias(acc)}’에 ${n}줄을 반영했어요.`, { label: '되돌리기', fn: () => { H = prev; saveHoldings(H); filter = { owner: 'all', account: null }; render(); } });
   };
 }
 void el; void fmtUSD; void ymToIso;
