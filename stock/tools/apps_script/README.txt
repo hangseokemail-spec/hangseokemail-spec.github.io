@@ -1,10 +1,11 @@
 ﻿Seok's Stock 계정 저장소 배포 키트
 
-방법 1(명령 한 줄, 추천)
-  1) 이 폴더에서 PowerShell 열기(폴더 빈 곳 Shift+우클릭 → 'PowerShell 창 열기' 또는 터미널에서 cd)
-  2) powershell -ExecutionPolicy Bypass -File .\deploy.ps1
-  3) 안내대로: Apps Script API 켜기 → 구글 로그인 허용 → 브라우저에서 권한 허용
-  4) 마지막에 나온 웹 앱 주소(클립보드에 복사됨)를 Claude에게 붙여 주기
+방법 1(두 번 클릭, 추천)
+  1) 이 폴더의 '배포하기.cmd'를 두 번 클릭
+  2) 안내대로: Apps Script API 켜기 → 구글 로그인 허용 → 브라우저에서 권한 허용
+  3) 끝나면 주소가 webapp_url.txt에 저장되고 클립보드에도 복사됨 → Claude에게 '배포 끝'이라고만 보내기
+     (막히면 '배포 막혔어'라고만 보내기. 기록 deploy_log.txt를 Claude가 직접 읽음)
+  직접 실행하려면: powershell -ExecutionPolicy Bypass -File "<이 폴더>\deploy.ps1" (어느 위치에서든 됨)
 
 방법 2(손으로)
   1) https://script.google.com → 새 프로젝트 → Code.gs 내용을 통째로 붙여 넣기 → 저장
