@@ -138,6 +138,10 @@
         count: list.length,
         publishedAt: s.publishAt && e[s.publishAt] ? Date.parse(e[s.publishAt]) : null,
         link: s.link ? abs(fill(s.link, ctx)) : null,
+        // 종이 표지에 그림이 없을 때 그림 자리에 까는 글(부제·본문·아래 줄). 없으면 안 쓴다.
+        deck: s.deck ? fill(s.deck, ctx) : null,
+        body: s.body ? fill(s.body, ctx) : null,
+        foot: s.foot ? fill(s.foot, ctx) : null,
       };
     },
 
@@ -458,7 +462,15 @@
       const svg = safeSVG(it.svg);
       if (svg) $('.pa', el).appendChild(svg);
       else if (it.cover) $('.pa', el).appendChild(img('full'));
-      else $('.pa', el).remove();
+      else {
+        // 그림이 없는 종이 표지(예: SEOKONOMY): 큰 제목 → 부제 → 두 단 본문 → 아래 줄로 지면처럼 채운다.
+        $('.pa', el).remove();
+        el.classList.add('cv-paper-text');
+        if (p.accent) el.style.setProperty('--pacc', p.accent);
+        el.insertAdjacentHTML('beforeend', `${it.deck ? `<div class="pd">${esc(it.deck)}</div>` : ''}
+          ${it.body ? `<div class="pb">${esc(it.body)}</div>` : '<div class="pb"></div>'}
+          ${it.foot ? `<div class="pf">${esc(it.foot)}</div>` : ''}`);
+      }
     } else if (st === 'overlay' && it.cover) {
       el.className = 'cv cv-overlay';
       el.appendChild(img('full'));
@@ -601,9 +613,27 @@
   }
 
   // 모든 카드를 가장 큰 카드 높이에 맞춘다(글은 자르지 않고, 남는 자리는 상태 줄 위로).
+  // 탭의 카드가 한 줄에 다 들어가면 좋으니, 넘칠 때는 카드 너비를 조금 줄여 한 줄에 담는다.
+  // (넓은 화면 모드에서만 효과가 있다. 2열·1열 모드는 CSS가 --cw를 쓰지 않는다.)
+  // 줄여도 CW_MIN보다 좁아지면 줄이지 않고 다음 줄로 넘긴다('전체' 탭처럼 많은 경우).
+  const CW_MIN = 200, CW_GAP = 22;
+  function fitCols(cards) {
+    const board = $('#main');
+    if (!board) return;
+    board.style.removeProperty('--cw');
+    const cs = getComputedStyle(board);
+    const base = parseFloat(cs.getPropertyValue('--cw')) || 236;
+    const n = cards.length;
+    if (n < 2) return;
+    const w = board.clientWidth - parseFloat(cs.paddingLeft || 0) - parseFloat(cs.paddingRight || 0);
+    if (n * base + (n - 1) * CW_GAP <= w) return;
+    const cw = Math.floor((w - (n - 1) * CW_GAP) / n);
+    if (cw >= CW_MIN) board.style.setProperty('--cw', cw + 'px');
+  }
   function equalize() {
     document.querySelectorAll('.card').forEach((c) => { c.style.minHeight = ''; });
     const cards = [...document.querySelectorAll('.card')].filter((c) => !c.hidden);
+    fitCols(cards);
     const max = Math.max(0, ...cards.map((c) => c.getBoundingClientRect().height));
     if (max > 0) cards.forEach((c) => { c.style.minHeight = Math.ceil(max) + 'px'; });
   }

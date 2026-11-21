@@ -169,7 +169,10 @@
         "list": "issues",
         "label": "제{issue}호",
         "title": "{headline}",
-        "summary": "{summary}"
+        "summary": "{summary}",
+        "deck": "{reading}",
+        "body": "{summary}",
+        "foot": "{range}"
       },
       "cover": {
         "style": "paper",

@@ -22,7 +22,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,900;1,600&family=Noto+Serif+KR:wght@900&display=swap">
 <style>
 :root{
   --bg:#f5f5f7; --ink:#1d1d1f; --mute:#6e6e73; --soft:#86868b; --hair:#e8e8ed;
@@ -84,6 +84,7 @@ button{font:inherit}
 /* 한 판 */
 .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
 .board{--cw:236px;padding-top:14px}
+.wrap.board{max-width:1320px}  /* 카드 5장이 한 줄에 들어갈 자리. 열은 가운데 정렬이라 4장 이하 탭은 그대로 */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,var(--cw));justify-content:center;gap:30px 22px;margin-top:22px}
 .empty{margin:60px 0 20px;text-align:center;font-size:17px;color:var(--mute)}
 
@@ -150,6 +151,15 @@ button{font:inherit}
 .cv-paper .pa{position:relative;flex:1;min-height:0;overflow:hidden;background:#0d1b33}
 .cv-paper .pa svg{position:absolute;inset:0;width:100%;height:100%;display:block}
 .cv-paper .ph{margin-top:3.4cqw;font-size:6.2cqw;font-weight:800;line-height:1.3;letter-spacing:-.02em;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+/* 그림 없는 종이 표지: 지면처럼 제목·부제·두 단 본문 */
+.cv-paper-text{--pacc:#7A1426}
+.cv-paper-text .ps{margin-bottom:0;padding-bottom:3cqw;border-bottom:1.6cqw solid var(--pacc)}
+.cv-paper-text .ph{margin-top:5cqw;font-family:'Noto Serif KR','Apple SD Gothic Neo',serif;font-size:10.4cqw;font-weight:900;line-height:1.22;letter-spacing:-.035em;-webkit-line-clamp:3}
+.cv-paper-text .pd{margin-top:3cqw;font-size:4.9cqw;font-weight:700;line-height:1.35;color:var(--pacc);letter-spacing:-.02em}
+.cv-paper-text .pb{position:relative;flex:1;min-height:0;margin-top:4cqw;padding-top:3.4cqw;border-top:.4cqw solid #17140f;overflow:hidden;
+  column-count:2;column-gap:4.4cqw;column-rule:.3cqw solid #d9cfbd;column-fill:auto;font-size:3.7cqw;line-height:1.55;color:#3d372d;text-align:justify;word-break:keep-all}
+.cv-paper-text .pb::after{content:"";position:absolute;left:0;right:0;bottom:0;height:22%;background:linear-gradient(rgba(244,239,228,0),#f4efe4)}
+.cv-paper-text .pf{margin-top:2.6cqw;padding-top:2cqw;border-top:.4cqw solid #17140f;display:flex;justify-content:space-between;font-size:3.5cqw;font-weight:600;color:#5f584b}
 
 /* 표지: 계기판 */
 .cv-wind svg{position:absolute;inset:0;width:100%;height:100%;display:block;font-family:var(--sans)}
@@ -183,6 +193,7 @@ footer a{color:#424245}
 @media (min-width:1440px){
   .wrap,.gnav .in,footer{max-width:1240px}
   .board{--cw:262px}
+  .wrap.board{max-width:1480px}
 }
 @media (max-width:1024px) and (orientation:portrait), (max-width:1024px) and (max-height:540px){
   .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;max-width:980px;margin-left:auto;margin-right:auto}
