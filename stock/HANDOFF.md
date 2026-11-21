@@ -204,7 +204,7 @@
 
 | 파일 | 역할 |
 |---|---|
-| `index.html` | 탭 5개(개인 탭은 `priv` 클래스), 계정 버튼, 밝게/어둡게 버튼, modulepreload, 기본 테마 dark |
+| `index.html` | 탭 6개(개인 탭은 `priv` 클래스), 계정 버튼, 밝게/어둡게 버튼, modulepreload, 기본 테마 dark |
 | `css/app.css` | 디자인 토큰(Opus A2 블록, 딤 다크)과 모든 스타일 |
 | `js/app.js` | 탭 전환(TABS, PRIVATE_TABS), 로그인·가입 창(openLogin), 계정 메뉴, 설정(마스터 전용 백엔드 주소·연결 확인, 암호화 내보내기/가져오기), 시작 시 세션 복원·prefetch |
 | `js/core/engine.js` | 백테스트 엔진: runStatic, runRank, applyTiming, alignSeries, fillDefensive |
