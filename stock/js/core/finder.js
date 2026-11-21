@@ -63,7 +63,9 @@ export function buildCandidates({ market = 'US', allowLev = false }) {
     fx('x:ep', 10, '팩터·가치'); fx('x:sp', 10, '팩터·가치');
     fx('x:rmom', 10, '팩터·모멘텀'); fx('x:hi52', 10, '팩터·모멘텀');
     fx('x:lowbeta', 10, '팩터·저베타'); fx('x:lowbeta', 20, '팩터·저베타');
-    fx('x:vm', 10, '팩터·복합'); fx('x:vq', 10, '팩터·복합'); fx('x:multi4', 10, '팩터·복합');
+    fx('x:bm', 10, '팩터·가치'); fx('x:fcfy', 10, '팩터·가치'); fx('x:shy', 10, '팩터·주주환원');
+    fx('x:gpa', 10, '팩터·수익성'); fx('x:roe', 10, '팩터·수익성'); fx('x:ag', 10, '팩터·투자'); fx('x:acc', 10, '팩터·회계');
+    fx('x:vm', 10, '팩터·복합'); fx('x:vq', 10, '팩터·복합'); fx('x:multi4', 10, '팩터·복합'); fx('x:bmgpa', 10, '팩터·복합'); fx('x:multi5', 10, '팩터·복합');
     rk({ group: M.stock, metric: 'mcap', from: 1, top: 50, weighting: 'rev', maxW: 5 }, '팩터·매출 가중', `${stockName} 시가총액 상위 50개를 매출 비례로(한 종목 최대 5%)`, ['Q', 'A']);
     const etfName = mk === 'US' ? '미국 ETF' : '국내 ETF';
     for (const lb of [3, 6, 12]) for (const n of [1, 2, 3]) {

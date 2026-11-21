@@ -45,6 +45,19 @@ for (const k of Object.keys(FACTORS)) {
   const rr = await runBacktest({ kind: 'rank', currency: 'USD', initial: 10000, start: '2010-01', end: '2025-12', rebalance: 'M', feeBp: 10, rank: { group: 'US_STOCK', metric: k, from: 1, top: 10, weighting: 'equal' } });
   ok(rr.rankHistory.length > 150, `${k} 백테스트 ${rr.rankHistory.length}번 고름`);
 }
+// 7-2) 재무상태표·현금흐름 팩터(2026-11-21 실적 DB 확장): 손계산과 같고, 공시 전 값은 안 씀
+const q0 = fp.by.get('AAPL').filter((x) => x.filed <= cutoffOf(202406)).at(-1);
+const raw = (await import('../js/core/data.js')).loadFund ? await (await import('../js/core/data.js')).loadFund('US_STOCK') : null;
+const row = raw.t.AAPL.q.find((r) => r[0] === q0.end);
+ok(row && row.length === 13 && near(q0.ta, row[9]) && near(q0.eq, row[10]), '애플 그 분기 총자산·자본이 원자료와 같음');
+ok(near(factorValue('x:bm', t, ti, m, q0), row[10] / tblVal(t, t.mc, ti, m)), '장부가/시총 = 자본 ÷ 시가총액');
+ok(q0.gpa > 0.1 && q0.gpa < 0.6 && q0.roe > 0.5, `애플 GP/A ${q0.gpa?.toFixed(2)}·ROE ${q0.roe?.toFixed(2)}가 상식 범위`);
+const jpm = fundAt(fp, 'JPM', cutoffOf(202406));
+ok(jpm && jpm.gpa == null && jpm.ta > 1e12, '은행(JPM)은 매출총이익이 없어 GP/A 없음, 총자산은 있음');
+for (const k of ['x:bm', 'x:fcfy', 'x:shy', 'x:gpa', 'x:roe', 'x:ag', 'x:acc', 'x:bmgpa', 'x:multi5']) {
+  const rr = await runBacktest({ kind: 'rank', currency: 'USD', initial: 10000, start: '2013-01', end: '2025-12', rebalance: 'Q', feeBp: 10, rank: { group: 'US_STOCK', metric: k, from: 1, top: 10, weighting: 'equal' } });
+  ok(rr.rankHistory.length >= 50 && rr.rankHistory.every((x) => x.picks.length === 10), `${k} 분기마다 10종목(${rr.rankHistory.length}번)`);
+}
 // 8) 전략 찾기: 연 회전율 한도를 지킨 것만 '목표 충족', 팩터 규칙 문장에 후보·점수·담기·다시 고르기·지금 고른다면·거래 양
 const f = await findStrategies({ market: 'US', targetCagr: 10, maxMdd: 25, years: 10, maxTurnover: 50 });
 ok(f.qualified.length > 0 && f.qualified.every((x) => x.turnover <= 0.5), `회전율 50% 이하만 충족(${f.qualified.length}개)`);

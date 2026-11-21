@@ -10,8 +10,10 @@
       저장: stock/data/fund/KR_STOCK.json(같은 모양, 금액은 원). 받은 보고서는 done에 적어 다시 받지 않음.
 
 저장: stock/data/fund/US_STOCK.json
-  {"updated", "src", "fields": ["end","filed","rev","oi","ni","eps"],
-   "t": {티커: {"cik", "at": 마지막으로 받은 날, "q": [[분기말 yyyymmdd, 공시일 yyyymmdd, 매출, 영업이익, 순이익, 희석 EPS], ...]}}}
+  {"updated", "src", "fields": ["end","filed","rev","oi","ni","eps","gp","cfo","capex","ta","eq","bb","div"],
+   "t": {티커: {"cik", "at": 마지막으로 받은 날, "q": [[분기말 yyyymmdd, 공시일 yyyymmdd, 매출, 영업이익, 순이익, 희석 EPS,
+                                                    매출총이익, 영업현금흐름, 설비투자, 총자산, 자본(지배주주), 자사주 매입, 배당 지급], ...]}}}
+  (2026-11-21 뒤 7열 추가. 현금흐름은 분기 값으로 풀고, 그 분기 실적과 같은 날 이전에 공시된 값만 담는다)
 증분: 기본은 '새 분기가 나올 때가 된 종목'(마지막 분기말이 75일 넘게 지났고 3일 안에 받지 않은 종목)만 다시 받아
       없던 분기만 붙인다. 이미 있는 분기 값은 바꾸지 않는다(처음 공시 값 유지). --full이면 모두 다시 받음.
 
@@ -30,6 +32,17 @@ REV_TAGS = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "
 OI_TAGS = ["OperatingIncomeLoss"]
 NI_TAGS = ["NetIncomeLoss", "NetIncomeLossAvailableToCommonStockholdersBasic", "ProfitLoss"]
 EPS_TAGS = ["EarningsPerShareDiluted", "EarningsPerShareBasicAndDiluted", "EarningsPerShareBasic"]
+# 2026-11-21 추가(재무상태표·현금흐름): 매출총이익, 영업현금흐름, 설비투자, 총자산, 자본(지배주주), 자사주 매입, 배당 지급
+GP_TAGS = ["GrossProfit"]
+COGS_TAGS = ["CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold", "CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization"]
+CFO_TAGS = ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"]
+CAPEX_TAGS = ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets", "PaymentsForCapitalImprovements"]
+TA_TAGS = ["Assets"]
+EQ_TAGS = ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"]
+BB_TAGS = ["PaymentsForRepurchaseOfCommonStock", "PaymentsForRepurchaseOfEquity"]
+DIV_TAGS = ["PaymentsOfDividendsCommonStock", "PaymentsOfDividends"]
+FIELDS = ["end", "filed", "rev", "oi", "ni", "eps", "gp", "cfo", "capex", "ta", "eq", "bb", "div"]
+NCOL = len(FIELDS)
 FORMS = {"10-Q", "10-K", "10-Q/A", "10-K/A", "10-KT", "10-QT"}
 # 지주회사 전환·합병으로 CIK가 바뀐 종목: 예전 회사의 분기 기록도 이어 붙인다(새 CIK 먼저, 겹치면 먼저 공시된 값)
 PRED = {"XOM": [34088], "GOOGL": [1288776], "DIS": [1001039], "BLK": [1364742], "ETN": [31277], "LIN": [884905],
@@ -121,8 +134,89 @@ def series(facts, tags, unit, pick="first"):
     return out
 
 
+def ytd_series(arr):
+    """현금흐름처럼 10-Q에 '회계연도 시작부터 누적'으로 나오는 값 → 분기 값(처음 공시 값).
+    같은 시작일의 누적값을 끝나는 날 순으로 놓고 앞 값을 뺀다(1분기=3개월 누적, 4분기=연간−9개월). 3개월 값이 따로 있으면 그것을 쓴다."""
+    by = {}  # 시작일 → {끝: 처음 공시 사실}
+    direct = {}
+    for x in arr:
+        if x.get("form") not in FORMS or "start" not in x or x.get("val") is None:
+            continue
+        n = days(x["start"], x["end"])
+        if not (75 <= n <= 105 or 165 <= n <= 195 or 255 <= n <= 285 or 340 <= n <= 390):
+            continue
+        box = by.setdefault(x["start"], {})
+        if x["end"] not in box or x["filed"] < box[x["end"]]["filed"]:
+            box[x["end"]] = x
+        if 75 <= n <= 105 and (x["end"] not in direct or x["filed"] < direct[x["end"]]["filed"]):
+            direct[x["end"]] = x
+    out = {}
+    for st, box in by.items():
+        ends = sorted(box)
+        prev = None
+        for e in ends:
+            x = box[e]
+            n = days(st, e)
+            if 75 <= n <= 105:
+                v, f = x["val"], x["filed"]
+            elif prev is not None and 75 <= days(prev, e) <= 105:
+                v, f = x["val"] - box[prev]["val"], max(x["filed"], box[prev]["filed"])
+            else:
+                prev = e
+                continue
+            if e not in out or f < out[e][1]:
+                out[e] = (v, f)
+            prev = e
+    for e, x in direct.items():  # 회사가 3개월 값을 직접 낸 분기는 그 값을 우선
+        if e not in out or x["filed"] <= out[e][1]:
+            out[e] = (x["val"], x["filed"])
+    return out
+
+
+def inst_series(arr):
+    """재무상태표처럼 '그날 잔액'인 값 → {날짜: (값, 처음 공시일)}."""
+    out = {}
+    for x in arr:
+        if x.get("form") not in FORMS or "start" in x or x.get("val") is None:
+            continue
+        e = x["end"]
+        if e not in out or x["filed"] < out[e][1]:
+            out[e] = (x["val"], x["filed"])
+    return out
+
+
+def series_by(facts, tags, fn, unit="USD"):
+    g = facts.get("facts", {}).get("us-gaap", {})
+    out = {}
+    for tag in tags:
+        arr = g.get(tag, {}).get("units", {}).get(unit)
+        if not arr:
+            continue
+        for e, v in fn(arr).items():
+            if e not in out:
+                out[e] = v
+    return out
+
+
+def near_end(col, e, tol=7):
+    """같은 분기말(±7일)의 값"""
+    if e in col:
+        return col[e]
+    best = None
+    for k, v in col.items():
+        d = abs(days(k, e))
+        if d <= tol and (best is None or d < best[0]):
+            best = (d, v)
+    return best[1] if best else None
+
+
 def parse(facts):
     cols = [series(facts, REV_TAGS, "USD", "max"), series(facts, OI_TAGS, "USD"), series(facts, NI_TAGS, "USD"), series(facts, EPS_TAGS, "USD/shares")]
+    gp = series(facts, GP_TAGS, "USD")
+    cogs = series(facts, COGS_TAGS, "USD")
+    extra = [series_by(facts, CFO_TAGS, ytd_series), series_by(facts, CAPEX_TAGS, ytd_series),
+             series_by(facts, TA_TAGS, inst_series), series_by(facts, EQ_TAGS, inst_series),
+             series_by(facts, BB_TAGS, ytd_series), series_by(facts, DIV_TAGS, ytd_series)]
     ends = sorted(set().union(*[c.keys() for c in cols]))
     rows = []
     for e in ends:
@@ -132,20 +226,32 @@ def parse(facts):
             if not v:
                 return None
             return round(v[0], 4) if f else int(round(v[0]))
-        rows.append([d2i(e), d2i(filed), num(vals[0]), num(vals[1]), num(vals[2]), num(vals[3], True)])
+        # 새 열은 그 분기 실적과 같은 날(또는 그 전)에 공시된 값만 — 나중에 나온 값으로 과거를 미리 보지 않게
+        def ok(v):
+            return v if v and v[1] <= filed else None
+        g = ok(gp.get(e))
+        if g is None and vals[0] and ok(cogs.get(e)):
+            g = (vals[0][0] - cogs[e][0], filed)
+        ex = [ok(near_end(c, e)) for c in extra]
+        rows.append([d2i(e), d2i(filed), num(vals[0]), num(vals[1]), num(vals[2]), num(vals[3], True), num(g)] + [num(v) for v in ex])
     return [r for r in rows if r[0] >= 20070101]
+
+
+def pad(r):
+    return r + [None] * (NCOL - len(r)) if len(r) < NCOL else r
 
 
 def merge_first(a, b):
     """두 회사(CIK) 기록 합치기: 같은 분기면 먼저 공시된 쪽, 빈 칸은 다른 쪽으로 채움."""
-    by = {r[0]: r[:] for r in a}
+    by = {r[0]: pad(r[:]) for r in a}
     for r in b:
+        r = pad(r[:])
         o = by.get(r[0])
         if o is None:
-            by[r[0]] = r[:]
+            by[r[0]] = r
             continue
-        first, other = (o, r) if o[1] <= r[1] else (r[:], o)
-        for i in range(2, 6):
+        first, other = (o, r) if o[1] <= r[1] else (r, o)
+        for i in range(2, NCOL):
             if first[i] is None:
                 first[i] = other[i]
         by[r[0]] = first
@@ -154,11 +260,12 @@ def merge_first(a, b):
 
 def merge(old, new):
     """이미 있는 분기는 그대로(빈 칸만 채움), 없던 분기만 붙임."""
-    by = {r[0]: r for r in old}
+    by = {r[0]: pad(r) for r in old}
     for r in new:
+        r = pad(r)
         if r[0] in by:
             o = by[r[0]]
-            for i in range(2, 6):
+            for i in range(2, NCOL):
                 if o[i] is None and r[i] is not None:
                     o[i] = r[i]
         else:
@@ -214,7 +321,7 @@ def run_us(full=False, only=None, limit=None):
         print(f"{t}: {len(q)}분기 ({q[0][0]}~{q[-1][0]})", flush=True)
     json.dump(ciks, open(cik_path, "w"), ensure_ascii=False, indent=0, sort_keys=True)
     db.update({"updated": dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "src": "SEC EDGAR XBRL companyfacts",
-               "fields": ["end", "filed", "rev", "oi", "ni", "eps"]})
+               "fields": FIELDS})
     all_t = json.load(open(os.path.join(DATA, "monthly_US_STOCK.json")))["tickers"]
     db["nodata"] = sorted(t for t in all_t if not db["t"].get(t, {}).get("q"))
     if changed or full or not os.path.exists(path):
@@ -291,48 +398,107 @@ KR_ACCOUNTS = {
 }
 
 
+# 2026-11-21: 매출총이익(손익), 총자산·자본(재무상태표, 그날 잔액), 영업현금흐름·설비투자·자사주·배당(현금흐름, 연초부터 누적)
+KR_IS_MORE = {"gp": (["ifrs-full_GrossProfit", "ifrs_GrossProfit"], ["매출총이익", "매출총이익(손실)"])}
+KR_BS = {
+    "ta": (["ifrs-full_Assets", "ifrs_Assets"], ["자산총계"]),
+    "eq": (["ifrs-full_EquityAttributableToOwnersOfParent", "ifrs_EquityAttributableToOwnersOfParent", "ifrs-full_Equity", "ifrs_Equity"],
+           ["지배기업의소유주에게귀속되는자본", "지배기업소유주지분", "지배기업의소유주지분", "자본총계"]),
+}
+KR_CF = {
+    "cfo": (["ifrs-full_CashFlowsFromUsedInOperatingActivities", "ifrs_CashFlowsFromUsedInOperatingActivities"],
+            ["영업활동현금흐름", "영업활동으로인한현금흐름", "영업활동으로부터의현금흐름", "영업활동순현금흐름", "영업활동으로인한순현금흐름"]),
+    "capex": (["ifrs-full_PurchaseOfPropertyPlantAndEquipment", "ifrs_PurchaseOfPropertyPlantAndEquipment"], ["유형자산의취득", "유형자산취득"]),
+    "bb": (["ifrs-full_PaymentsToAcquireOrRedeemEntitysShares", "ifrs_PaymentsToAcquireOrRedeemEntitysShares", "dart_AcquisitionOfTreasuryShares"], ["자기주식의취득", "자기주식취득"]),
+    "div": (["ifrs-full_DividendsPaidClassifiedAsFinancingActivities", "ifrs_DividendsPaidClassifiedAsFinancingActivities", "ifrs-full_DividendsPaid"],
+            ["배당금의지급", "배당금지급", "배당금의지급(지배기업)", "현금배당금의지급"]),
+}
+KR_VER = 2  # 보고서 값 형식 판: 2부터 재무상태표·현금흐름도 담음(1판은 다시 받음)
+
+
+def _find(rows, ids, nms):
+    for want in ids:
+        hit = next((x for x in rows if x.get("account_id") == want), None)
+        if hit:
+            return hit
+    for want in nms:
+        hit = next((x for x in rows if NM(x.get("account_nm")) == want), None)
+        if hit:
+            return hit
+    return None
+
+
 def kr_pick(items):
-    """한 보고서의 손익계산서에서 매출·영업이익·순이익·EPS의 (3개월 값, 누적 값)."""
-    rows = [x for x in items if x.get("sj_div") in ("IS", "CIS")]
-    rows.sort(key=lambda x: (0 if x.get("sj_div") == "IS" else 1, int(x.get("ord") or 0)))
+    """한 보고서에서 항목별 (3개월 값, 누적 값).
+    손익: 3개월·누적 그대로 / 재무상태표: (잔액, 잔액) / 현금흐름: (None, 연초부터 누적, 누적 칸이 비면 당기 칸)."""
+    ist = [x for x in items if x.get("sj_div") in ("IS", "CIS")]
+    ist.sort(key=lambda x: (0 if x.get("sj_div") == "IS" else 1, int(x.get("ord") or 0)))
+    bs = sorted((x for x in items if x.get("sj_div") == "BS"), key=lambda x: int(x.get("ord") or 0))
+    cf = sorted((x for x in items if x.get("sj_div") == "CF"), key=lambda x: int(x.get("ord") or 0))
     out = {}
-    for k, (ids, nms) in KR_ACCOUNTS.items():
-        hit = None
-        for want in ids:
-            hit = next((x for x in rows if x.get("account_id") == want), None)
-            if hit:
-                break
-        if not hit:
-            for want in nms:
-                hit = next((x for x in rows if NM(x.get("account_nm")) == want), None)
-                if hit:
-                    break
+    for k, (ids, nms) in {**KR_ACCOUNTS, **KR_IS_MORE}.items():
+        hit = _find(ist, ids, nms)
         out[k] = (num(hit.get("thstrm_amount")), num(hit.get("thstrm_add_amount"))) if hit else (None, None)
+    for k, (ids, nms) in KR_BS.items():
+        hit = _find(bs, ids, nms)
+        v = num(hit.get("thstrm_amount")) if hit else None
+        out[k] = (v, v)
+    for k, (ids, nms) in KR_CF.items():
+        hit = _find(cf, ids, nms)
+        c = None
+        if hit:
+            c = num(hit.get("thstrm_add_amount"))
+            if c is None:
+                c = num(hit.get("thstrm_amount"))
+            if c is not None and k != "cfo":
+                c = abs(c)  # 나가는 돈은 양수로(설비투자·자사주·배당)
+        out[k] = (None, c)
     return out
 
 
+IS_K = ("rev", "oi", "ni", "eps", "gp")
+CF_K = ("cfo", "capex", "bb", "div")
+BS_K = ("ta", "eq")
+
+
 def kr_quarters(reps):
-    """reps: {(연도, 보고서코드): {'filed': yyyymmdd, 'v': kr_pick 결과}} → 분기 표."""
+    """reps: {(연도, 보고서코드): {'filed': yyyymmdd, 'v': kr_pick 결과}} → 분기 표(열은 FIELDS 순서)."""
     rows = []
     years = sorted({y for y, _ in reps})
+    get = lambda rep_, k, i: (rep_["v"].get(k) or (None, None))[i] if rep_ else None
     for y in years:
         q1, h1, q3, fy = (reps.get((y, c)) for c in ("11013", "11012", "11014", "11011"))
-        for rc, mon, rep_ in (("11013", 3, q1), ("11012", 6, h1), ("11014", 9, q3)):
-            if rep_:
-                end = y * 10000 + mon * 100 + (31 if mon in (3, 12) else 30)
-                rows.append([end, rep_["filed"]] + [rep_["v"][k][0] for k in ("rev", "oi", "ni", "eps")])
+        seq = [("11013", 3, q1, None), ("11012", 6, h1, q1), ("11014", 9, q3, h1)]
+        for rc, mon, rep_, prev in seq:
+            if not rep_:
+                continue
+            end = y * 10000 + mon * 100 + (31 if mon in (3, 12) else 30)
+            v = {k: get(rep_, k, 0) for k in IS_K}
+            for k in CF_K:  # 누적 − 직전 보고서 누적(1분기는 누적 그대로)
+                c = get(rep_, k, 1)
+                pc = get(prev, k, 1) if prev else 0
+                v[k] = None if c is None or pc is None else c - pc
+            for k in BS_K:
+                v[k] = get(rep_, k, 0)
+            rows.append([end, rep_["filed"]] + [v[k] for k in FIELDS[2:]])
         if fy:
-            vals = []
-            for k in ("rev", "oi", "ni", "eps"):
-                a = fy["v"][k][0]
-                cum9 = q3["v"][k][1] if q3 and q3["v"][k][1] is not None else None
-                if cum9 is None and q1 and h1 and q3 and None not in (q1["v"][k][0], h1["v"][k][0], q3["v"][k][0]):
-                    cum9 = q1["v"][k][0] + h1["v"][k][0] + q3["v"][k][0]
-                vals.append(a - cum9 if a is not None and cum9 is not None else None)
-            rows.append([y * 10000 + 1231, fy["filed"]] + vals)
+            v = {}
+            for k in IS_K:
+                a = get(fy, k, 0)
+                cum9 = get(q3, k, 1)
+                if cum9 is None and q1 and h1 and q3 and None not in (get(q1, k, 0), get(h1, k, 0), get(q3, k, 0)):
+                    cum9 = get(q1, k, 0) + get(h1, k, 0) + get(q3, k, 0)
+                v[k] = a - cum9 if a is not None and cum9 is not None else None
+            for k in CF_K:  # 연간 − 3분기 누적
+                c, pc = get(fy, k, 1), get(q3, k, 1)
+                v[k] = c - pc if c is not None and pc is not None else None
+            for k in BS_K:
+                v[k] = get(fy, k, 0)
+            rows.append([y * 10000 + 1231, fy["filed"]] + [v[k] for k in FIELDS[2:]])
     out = []
+    ei = FIELDS.index("eps")
     for r in sorted(rows):
-        r = r[:2] + [None if v is None else int(round(v)) for v in r[2:5]] + [None if r[5] is None else round(r[5], 1)]
+        r = r[:2] + [None if x is None else (round(x, 1) if i + 2 == ei else int(round(x))) for i, x in enumerate(r[2:])]
         if r[2] is not None and r[2] <= 0:
             r[2] = None
         if any(v is not None for v in r[2:]):
@@ -388,12 +554,20 @@ def run_kr(max_calls=15000, max_minutes=200, full=False, only=None, fetcher=None
         stamp = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         raw["updated"] = stamp
         json.dump(raw, open(raw_p, "w"), ensure_ascii=False, separators=(",", ":"))
-        pub.update({"updated": stamp, "src": "OpenDART 단일회사 전체 재무제표(연결 우선)", "fields": ["end", "filed", "rev", "oi", "ni", "eps"], "currency": "KRW"})
+        pub.update({"updated": stamp, "src": "OpenDART 단일회사 전체 재무제표(연결 우선)", "fields": FIELDS, "currency": "KRW"})
         pub["nodata"] = sorted(t for t in all_t if not pub["t"].get(t, {}).get("q"))
         pub["skip"] = {t: v["skip"] for t, v in raw["t"].items() if v.get("skip")}
         with open(pub_p, "w") as f:
             json.dump(pub, f, ensure_ascii=False, separators=(",", ":"))
 
+    # 아직 자료가 없는 종목 먼저, 그다음 예전 판(1판) 보고서를 다시 받아야 하는 종목, 나머지
+    def stale_n(t):
+        cur = raw["t"].get(t) or {}
+        return sum(1 for v in cur.get("reps", {}).values() if v.get("ver", 1) < KR_VER)
+    def order(t):
+        cur = raw["t"].get(t) or {}
+        return (0 if not cur.get("reps") and not cur.get("skip") else 1 if stale_n(t) else 2)
+    tickers = sorted(tickers, key=lambda t: (order(t), all_t.index(t) if t in all_t else 0))
     t = None
     try:
         corp = corp_codes(d, tickers)
@@ -415,7 +589,8 @@ def run_kr(max_calls=15000, max_minutes=200, full=False, only=None, fetcher=None
                 cur["skip"] = f"결산월 {cur['acc_mt']}월(12월 결산만 받음)"
                 continue
             cur.pop("skip", None)
-            done = set(cur["done"])
+            # 예전 판 값만 있는 보고서는 다시 받음(재무상태표·현금흐름 추가)
+            done = set(x for x in cur["done"] if x not in cur["reps"] or cur["reps"][x].get("ver", 1) >= KR_VER)
             touched = False
             for y in range(2015, today.year + 1):
                 for rc, mon, due in REPORTS:
@@ -431,9 +606,11 @@ def run_kr(max_calls=15000, max_minutes=200, full=False, only=None, fetcher=None
                             cur["fs"] = fs
                             break
                     if items:
-                        cur["reps"][tag] = {"filed": int(str(items[0]["rcept_no"])[:8]), "v": kr_pick(items)}
+                        cur["reps"][tag] = {"filed": int(str(items[0]["rcept_no"])[:8]), "v": kr_pick(items), "ver": KR_VER}
                         done.add(tag)
                         touched = True
+                    elif tag in cur["reps"]:
+                        done.add(tag)  # 다시 받으려 했는데 없으면 예전 값 유지
                     elif (today - pend).days > due + 30:
                         done.add(tag)  # 상장 전이거나 끝내 안 낸 보고서는 다시 묻지 않음
                     cur["done"] = sorted(done)
@@ -456,8 +633,30 @@ def run_kr(max_calls=15000, max_minutes=200, full=False, only=None, fetcher=None
     print(f"KR: 호출 {getattr(d, 'calls', 0)}, 바뀜 {changed}, 자료 있음 {sum(1 for v in pub['t'].values() if v.get('q'))}종목" + (f", 멈춤: {stop}" if stop else ""))
 
 
+def probe_kr(arg):
+    """한 회사·한 보고서의 계정 목록을 찍어 본다(키는 찍지 않음): --kr-probe 005930:2024:11012"""
+    key = os.environ.get("DART_API_KEY", "").strip()
+    if not key:
+        print("DART_API_KEY 없음"); return
+    code, year, rc = (arg.split(":") + ["2024", "11012"])[:3]
+    d = Dart(key, 20)
+    corp = corp_codes(d, [code]).get(code)
+    for fs in ("CFS", "OFS"):
+        j = d.json("fnlttSinglAcntAll.json", corp_code=corp, bsns_year=year, reprt_code=rc, fs_div=fs)
+        if j.get("status") == "000" and j.get("list"):
+            print(f"{code} {year} {rc} {fs} 접수 {j['list'][0].get('rcept_no')}")
+            for x in j["list"]:
+                if x.get("sj_div") in ("BS", "CF", "IS", "CIS"):
+                    print(f"  {x.get('sj_div'):3} {x.get('account_id','')[:60]:60} {NM(x.get('account_nm'))[:24]:24} 당기={x.get('thstrm_amount')} 누적={x.get('thstrm_add_amount')}")
+            v = kr_pick(j["list"])
+            print("뽑은 값:", json.dumps(v, ensure_ascii=False))
+            return
+    print("자료 없음", j.get("status"), j.get("message"))
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--kr-probe", help="국내 계정 확인: 종목코드:연도:보고서코드")
     ap.add_argument("--full", action="store_true")
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--limit", type=int)
@@ -466,6 +665,8 @@ def main():
     ap.add_argument("--max-calls", type=int, default=15000, help="OpenDART 이번 실행 최대 호출(하루 2만 회 한도)")
     ap.add_argument("--max-minutes", type=int, default=200)
     a = ap.parse_args()
+    if a.kr_probe:
+        return probe_kr(a.kr_probe)
     only = set(a.only) if a.only else None
     if not a.kr_only:
         run_us(full=a.full, only=only, limit=a.limit)

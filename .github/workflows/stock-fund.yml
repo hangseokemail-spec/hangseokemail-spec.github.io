@@ -12,6 +12,10 @@ on:
         description: "국내 실적을 처음부터 다시 받기"
         type: boolean
         default: false
+      probe:
+        description: "계정 확인만(예: 005930:2024:11012). 비우면 평소 수집"
+        type: string
+        default: ""
 permissions:
   contents: write
 concurrency:
@@ -34,8 +38,15 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: |
           if [ -z "$DART_API_KEY" ]; then echo "DART_API_KEY가 아직 없어요 — Settings → Secrets and variables → Actions에 넣으면 다음 실행부터 받아요"; echo "ok=false" >> "$GITHUB_OUTPUT"; else echo "ok=true" >> "$GITHUB_OUTPUT"; fi
+      - name: probe
+        if: steps.key.outputs.ok == 'true' && inputs.probe != ''
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          PROBE: ${{ inputs.probe }}
+        run: |
+          for p in $PROBE; do python stock/tools/fetch_fund.py --kr-probe "$p"; done
       - name: fetch
-        if: steps.key.outputs.ok == 'true'
+        if: steps.key.outputs.ok == 'true' && (inputs.probe == '' || inputs.probe == null)
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
         run: |
@@ -43,7 +54,7 @@ jobs:
           if [ "${{ inputs.full }}" = "true" ]; then FULL="--full"; fi
           python stock/tools/fetch_fund.py --kr-only --max-calls 15000 --max-minutes 200 $FULL
       - name: commit
-        if: steps.key.outputs.ok == 'true'
+        if: steps.key.outputs.ok == 'true' && (inputs.probe == '' || inputs.probe == null)
         run: |
           git config user.name "seoks-stock-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -13,6 +13,7 @@ export const FUND_METRICS = {
   eps_qoq: { label: 'EPS 성장률(직전 분기 대비)', short: 'EPS 성장률 QoQ' },
   opm: { label: '영업이익률(최근 4분기)', short: '영업이익률' },
   npm: { label: '순이익률(최근 4분기)', short: '순이익률' },
+  roe: { label: 'ROE(최근 4분기 순이익 ÷ 평균 자본)', short: 'ROE' },
 };
 export const isFundMetric = (m) => typeof m === 'string' && m.startsWith('f:') && FUND_METRICS[m.slice(2)] != null;
 
@@ -29,7 +30,7 @@ export function quarterMetrics(q) {
     const p = i > 0 && gap(q[i - 1][0], end) >= 75 && gap(q[i - 1][0], end) <= 105 ? q[i - 1] : null;
     let y = null;
     for (let j = i - 1; j >= Math.max(0, i - 6); j--) { const g = gap(q[j][0], end); if (g >= 350 && g <= 380) { y = q[j]; break; } }
-    let opm = null, npm = null, rev4 = null, ni4 = null;
+    let opm = null, npm = null, rev4 = null, ni4 = null, gp4 = null, cfo4 = null, fcf4 = null, pay4 = null;
     if (i >= 3) {
       let ok = true;
       for (let j = i - 2; j <= i; j++) { const g = gap(q[j - 1][0], q[j][0]); if (g < 75 || g > 105) ok = false; }
@@ -39,6 +40,18 @@ export function quarterMetrics(q) {
       const sn4 = four.reduce((t, r) => (r[4] == null ? NaN : t + r[4]), 0);
       if (ok && isFinite(sr) && sr > 0) rev4 = sr;
       if (ok && isFinite(sn4)) ni4 = sn4;
+      // 2026-11-21 재무상태표·현금흐름 열(6~12): 매출총이익, 영업현금흐름, 설비투자, 총자산, 자본, 자사주 매입, 배당 지급
+      if (ok) {
+        const sum = (i, f = (x) => x) => four.reduce((t, r) => (r[i] == null ? NaN : t + f(r[i])), 0);
+        const g4 = sum(6), c4 = sum(7), k4 = sum(8, (x) => Math.max(0, x));
+        if (isFinite(g4) && (rev4 == null || g4 <= rev4 * 1.01)) gp4 = g4;
+        if (isFinite(c4)) {
+          cfo4 = c4;
+          if (isFinite(k4)) fcf4 = c4 - k4;
+          // 현금흐름표가 있는 분기에 자사주·배당이 비어 있으면 안 한 것(0)으로
+          pay4 = four.reduce((t, r) => t + Math.max(0, r[11] || 0) + Math.max(0, r[12] || 0), 0);
+        }
+      }
       if (ok && sr > 0) {
         const so = four.reduce((t, r) => (r[3] == null ? NaN : t + r[3]), 0);
         const sn = four.reduce((t, r) => (r[4] == null ? NaN : t + r[4]), 0);
@@ -46,8 +59,18 @@ export function quarterMetrics(q) {
         npm = isFinite(sn) ? sn / sr : null;
       }
     }
+    // 재무상태표: 그 분기말 잔액과 1년 전 잔액
+    const ta = q[i][9] > 0 ? q[i][9] : null, eq = q[i][10] != null ? q[i][10] : null;
+    const taY = y?.[9] > 0 ? y[9] : null, eqY = y?.[10] != null ? y[10] : null;
+    const eqAvg = eq != null && eq > 0 ? (eqY != null && eqY > 0 ? (eq + eqY) / 2 : eq) : null;
+    const taAvg = ta != null ? (taY != null ? (ta + taY) / 2 : ta) : null;
     out.push({
       end, filed,
+      gp4, cfo4, fcf4, pay4, ta, eq: eq != null && ta != null && eq > ta ? null : eq,
+      gpa: gp4 != null && ta ? gp4 / ta : null,
+      roe: ni4 != null && eqAvg ? ni4 / eqAvg : null,
+      ag: ta && taY ? ta / taY - 1 : null,
+      acc: ni4 != null && cfo4 != null && taAvg ? (ni4 - cfo4) / taAvg : null,
       rev_yoy: growth(rev, y?.[2]), rev_qoq: growth(rev, p?.[2]),
       oi_yoy: growth(oi, y?.[3]), oi_qoq: growth(oi, p?.[3]),
       ni_yoy: growth(ni, y?.[4]), ni_qoq: growth(ni, p?.[4]),

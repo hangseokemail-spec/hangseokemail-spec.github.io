@@ -45,6 +45,51 @@ export const FACTORS = {
     how: '최근 4분기 매출 합 ÷ 그달 말 시가총액이 높은 순이에요(PSR이 낮은 순).',
     paper: 'Barbee 외(1996), 가치 팩터 계열', warn: '이익을 못 내는 회사도 위로 올 수 있어요.',
   },
+  'x:bm': {
+    label: '장부가/시가총액 B/M(자본 ÷ 시가총액)', short: '장부가/시총(B/M)', fam: '가치', fund: true, need: 1,
+    how: '그 분기말 지배주주 자본(장부가) ÷ 그달 말 시가총액이 높은 순이에요. PBR이 낮은 순과 같아요. 가치 팩터의 고전 정의예요.',
+    paper: 'Fama·French(1992, 1993)', warn: '장부가는 무형자산(브랜드·연구개발)을 담지 못해 2007~2020년에 오래 부진했어요.',
+  },
+  'x:fcfy': {
+    label: 'FCF 수익률(잉여현금흐름 ÷ 시가총액)', short: 'FCF 수익률', fam: '가치', fund: true, need: 1,
+    how: '최근 4분기 (영업현금흐름 − 설비투자) ÷ 그달 말 시가총액이 높은 순이에요. 실제로 남는 현금에 비해 싼 회사가 위예요.',
+    paper: 'JKP 팩터(free cash flow to price), S&P 500 Quality FCF Aristocrats 계열', warn: '설비투자를 공시하지 않은 분기는 빠져요.',
+  },
+  'x:shy': {
+    label: '주주환원 수익률((배당 + 자사주 매입) ÷ 시가총액)', short: '주주환원 수익률', fam: '주주환원', fund: true, need: 1,
+    how: '최근 4분기 배당 지급과 자사주 매입을 더해 그달 말 시가총액으로 나눈 값이 높은 순이에요. 배당수익률보다 회사가 돌려주는 돈을 넓게 봐요.',
+    paper: 'Boudoukh 외(2007)', warn: '신주 발행은 빼지 않은 총주주환원이에요.',
+  },
+  'x:gpa': {
+    label: '매출총이익/총자산 GP/A(수익성)', short: '매출총이익/총자산(GP/A)', fam: '수익성', fund: true, need: 1,
+    how: '최근 4분기 매출총이익 ÷ 그 분기말 총자산이 높은 순이에요. 가진 자산으로 돈을 잘 버는 회사가 위예요.',
+    paper: 'Novy-Marx(2013)', warn: '은행·보험처럼 매출총이익이 없는 회사는 빠져요.',
+  },
+  'x:roe': {
+    label: 'ROE(순이익 ÷ 평균 자본)', short: 'ROE', fam: '수익성', fund: true, need: 1,
+    how: '최근 4분기 순이익 ÷ 지금과 1년 전 지배주주 자본의 평균이 높은 순이에요(퀄리티의 대표 지표).',
+    paper: 'Hou·Xue·Zhang(2015) q-팩터, Asness·Frazzini·Pedersen(2019) QMJ', warn: '자본이 아주 작거나 마이너스인 회사(자사주를 많이 산 회사)는 빠져요.',
+  },
+  'x:ag': {
+    label: '자산성장 낮은 순(투자 팩터)', short: '자산성장 낮은 순', fam: '투자', fund: true, need: 1,
+    how: '총자산이 1년 전보다 덜 늘어난 회사가 위예요. 자산을 공격적으로 늘린 회사는 그 뒤 수익률이 낮았다는 연구예요.',
+    paper: 'Cooper·Gulen·Schill(2008), Fama·French(2015) CMA', warn: '상장폐지 종목이 빠진 자료에서는 효과가 부풀 수 있어요.',
+  },
+  'x:acc': {
+    label: '발생액 낮은 순((순이익 − 영업현금흐름) ÷ 총자산)', short: '발생액 낮은 순', fam: '회계', fund: true, need: 1,
+    how: '최근 4분기 순이익과 영업현금흐름의 차이를 평균 총자산으로 나눈 값이 낮은 순이에요. 이익이 현금으로 뒷받침되는 회사가 위예요.',
+    paper: 'Sloan(1996)', warn: '현금 기반 수익성과 겹치는 신호라 같이 쓰면 중복될 수 있어요.',
+  },
+  'x:bmgpa': {
+    label: '가치+수익성(B/M 순위와 GP/A 순위 평균)', short: '가치+수익성(B/M·GP/A)', fam: '복합', fund: true, need: 1, parts: ['x:bm', 'x:gpa'],
+    how: '장부가/시총 순위와 매출총이익/총자산 순위를 0~100점으로 바꿔 평균한 점수가 높은 순이에요. 싸면서 돈을 잘 버는 회사(원 논문 그대로의 조합).',
+    paper: 'Novy-Marx(2013)', warn: '은행·보험은 매출총이익이 없어 빠져요.',
+  },
+  'x:multi5': {
+    label: '다섯 팩터 평균(가치·모멘텀·수익성·투자·낮은 변동성)', short: '다섯 팩터 평균', fam: '복합', fund: true, need: 13, parts: ['x:bm', 'x:mom121', 'x:gpa', 'x:ag', 'lowvol'],
+    how: '장부가/시총·모멘텀 12-1·매출총이익/총자산·자산성장 낮은 순·12개월 낮은 변동성 순위를 각각 0~100점으로 바꿔 평균한 점수가 높은 순이에요. 정리 자료가 권한 ‘다섯 계열 순위 평균’이에요.',
+    paper: '시장을 이긴 팩터 정리(가치·모멘텀·수익성·투자·저위험 다섯 계열), Jensen·Kelly·Pedersen(2023)', warn: '은행·보험은 매출총이익이 없어 빠져요.',
+  },
   'x:vm': {
     label: '가치+모멘텀(E/P 순위와 12-1 순위 평균)', short: '가치+모멘텀', fam: '복합', fund: true, need: 13, parts: ['x:ep', 'x:mom121'],
     how: '후보 안에서 이익수익률 순위와 모멘텀 12-1 순위를 각각 0~100점으로 바꿔 평균한 점수가 높은 순이에요. 둘은 반대로 움직일 때가 많아 같이 쓰면 덜 흔들려요.',
@@ -130,6 +175,13 @@ export function factorValue(metric, t, ti, m, fd, r = {}) {
     case 'x:highbeta': return beta(t, ti, m);
     case 'x:ep': { const mc = v(t.mc, m); return fd?.ni4 != null && mc > 0 ? fd.ni4 / mc : null; }
     case 'x:sp': { const mc = v(t.mc, m); return fd?.rev4 > 0 && mc > 0 ? fd.rev4 / mc : null; }
+    case 'x:bm': { const mc = v(t.mc, m); return fd?.eq > 0 && mc > 0 ? fd.eq / mc : null; }
+    case 'x:fcfy': { const mc = v(t.mc, m); return fd?.fcf4 != null && mc > 0 ? fd.fcf4 / mc : null; }
+    case 'x:shy': { const mc = v(t.mc, m); return fd?.pay4 != null && mc > 0 ? fd.pay4 / mc : null; }
+    case 'x:gpa': return fd?.gpa ?? null;
+    case 'x:roe': return fd?.roe ?? null;
+    case 'x:ag': return fd?.ag != null ? -fd.ag : null;
+    case 'x:acc': return fd?.acc != null ? -fd.acc : null;
     default: return isFundMetric(metric) ? (fd?.[metric.slice(2)] ?? null) : null;
   }
 }
