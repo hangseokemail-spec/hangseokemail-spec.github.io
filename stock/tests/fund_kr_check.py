@@ -92,6 +92,8 @@ try:
     check(all(col(by[e], "cfo") == 30 for e in by), f"영업현금흐름: 누적을 분기로 풀기(반기 보고서는 누적 칸) {[col(by[e], 'cfo') for e in sorted(by)]}")
     check(all(col(by[e], "capex") == 7 and col(by[e], "div") == 4 for e in by), f"설비투자·배당은 양수 분기 값 {[col(by[e], 'capex') for e in sorted(by)]}")
     check(by[20231231][1] == 20240320, "4분기 공시일 = 사업보고서 접수일")
+    rows_c = ff.kr_quarters({(2020, "11011"): {"filed": 20230105, "v": {"ta": [500, 500]}}, (2020, "11013"): {"filed": 20200515, "v": {"rev": [20, 20]}}})
+    check([r[1] for r in rows_c] == [20200515, 20210331], f"정정공시로 늦게 찍힌 공시일은 법정 기한으로 {[r[1] for r in rows_c]}")
     check(by[20240630][1] == 20240814 and by[20240630][2] == 160, "2분기 = 반기보고서 3개월 값")
     check(by[20240331][4] == 12, "순이익은 지배주주 귀속 우선")
     check(by[20240331][2] == 150, "쉼표가 있는 금액도 읽음")

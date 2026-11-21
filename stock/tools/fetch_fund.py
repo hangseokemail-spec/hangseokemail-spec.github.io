@@ -495,6 +495,14 @@ def kr_quarters(reps):
             for k in BS_K:
                 v[k] = get(fy, k, 0)
             rows.append([y * 10000 + 1231, fy["filed"]] + [v[k] for k in FIELDS[2:]])
+    # 정정공시가 있으면 DART가 마지막 정정본의 접수번호를 줘서 공시일이 몇 년 뒤로 찍힌다 →
+    # 법정 제출 기한(분기·반기 45일, 사업보고서 90일)보다 늦으면 기한 날짜를 공시일로 본다(원래 보고서는 기한 안에 나옴)
+    def cap_filed(end, filed):
+        e = dt.date(end // 10000, end // 100 % 100, end % 100)
+        due = e + dt.timedelta(days=90 if end % 10000 == 1231 else 45)
+        dint = due.year * 10000 + due.month * 100 + due.day
+        return min(filed, dint)
+    rows = [[r[0], cap_filed(r[0], r[1])] + r[2:] for r in rows]
     out = []
     ei = FIELDS.index("eps")
     for r in sorted(rows):
