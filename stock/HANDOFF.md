@@ -1,6 +1,6 @@
 # Seok's Stock 세부 지침서 (작업 인수인계)
 
-기준: 2026-11-21 12:50 KST · 포트폴리오 비교 수정 커밋(12절 마지막 줄)
+기준: 2026-11-21 14:30 KST · 목표·노후 카드 개편 커밋 `ba806c8`
 이 문서 하나만 읽으면 새 채팅(또는 PC의 Claude Code)에서 바로 이어 갈 수 있게 정리했다. 짧은 소개는 프로젝트 문서 `claude/seoks-stock-개요.md`에 있다.
 
 ---
@@ -52,12 +52,19 @@
 
 **전략 찾기**
 - 목표 수익률·최대 낙폭·기간을 넣으면 규칙을 추천한다.
+- 추천 카드는 **행동 규칙**으로 보여 준다: 평소 / 다시 고르기·비중 맞추기 / 확인(월말 종가, 다음 거래일 거래) / 팔기 / 돌아오기 + "지난 N년 피신 몇 번·몇 개월 · YYYY.MM 말 기준 투자하는 때/피신해 있을 때"(`finder.js` candRule, simulateMonthly의 nOut·outMonths·nowIn). 표·툴팁 제목(candSentence)에도 돌아오는 조건이 들어간다.
 
-**목표·노후**
-- 계획마다 최근 5회 기록
-- '그해 통장 숫자 / 오늘 돈' 스위치, 돈의 가치 막대
-- 나이 띠에서 목돈 넣기
-- 필요한 수익률을 구해 전략 찾기로 연결
+**목표·노후** (2026-11-21 개편, 기획 Opus · 그림 GPT 디자이너 · 컨펌 Fable, 문서 `docs/plan_redesign/`)
+- 맨 위 카드 ① **돈의 가치 저울**: 접시 위 금액(오늘 돈 / {year}년 통장 숫자, 누르면 정확한 숫자), 받침 아래 기간·물가(물가는 plan.inflation 하나). 고친 쪽으로 3° 기울었다 0.25초에 수평. `plan.scale = {today|then, years, last}`.
+- 맨 위 카드 ② **실행 목표 만들기**: 걸리는 기간 / 매달 넣을 돈 / 처음 목돈 / 필요한 수익률 중 고른 칸이 '?'. 보이는 값은 올림(10만원 이상 1만원, 미만 1천원, 수익률 0.1%p)하고 막대·문장·반영 모두 그 값. 못 닿거나 무리하면 '다른 길' 칩(질문은 그대로 두고 칸만 바꿈). 저울에서 온 목표면 "오늘 돈 가치를 지키려면 N년" 한 줄. [이 값으로 아래 계획 바꾸기](되돌리기 있음), [연 X% 내는 투자 규칙 찾기]. 노후 모드는 목표가 필요 자금을 따라감(link='plan'). `plan.calc`, 계산 `core/goalcalc.js`, 화면 `views/goalcards.js`, 테스트 `tests/goal_check.mjs`(52개).
+- 없앤 것: '오늘 돈/통장 숫자' 스위치(showToday), 목표 기준 스위치(goalBasis → 처음 열 때 그해 숫자로 바꿔 저장, migratePlan), 국밥 막대(→ 저울 ? 도움말), 목표 모드 역산 KPI 3개(②가 맡음), 노후 '필요한 월 적립' KPI(→ 바닥나는 나이/끝에 남는 돈).
+- 계획마다 최근 5회 기록(calc·scale은 기록에 안 넣음), 나이 띠 목돈, 구간별 수익률, 연금, 실제 기록은 아래 '자세한 계획'에 그대로.
+
+**내 자산** (2026-11-21 정리)
+- 맨 위 칩: 모아보기 · (사람 전체) · 계좌별 · + 계좌. 계좌를 고르면 그 계좌의 구성 도넛·배당(연·배당률·월별 막대·달력).
+- 모아보기 '계좌별 한눈에' 카드: 평가액·비중·수익률·연 배당.
+- 총액: 원화 환산·달러 환산 나란히, 원화 자산/달러 자산 막대. 수익률은 평균단가를 아는 종목만(`valuate` plPct·plCoverage). [지금 환율로 다시 계산] = 시세 DB 다시 받기 + open.er-api 중 최신 날짜(`refreshFx`, 무료 환율은 하루 단위).
+- 계좌는 별칭 중심(증권사 칸 없앰, 별칭으로 종류 짐작). 캡처 확인·종목 추가 창 안에서 바로 새 계좌. 캡처에 다른 계좌 이름이 보이면 새 계좌가 기본(덮어쓰기 사고 방지), 현금은 캡처에 보인 통화만 교체, 수익률만 보이면 평균단가 역산(≈).
 
 **화면 전반**
 - 모든 탭 금액 옆에 한글 읽기(원·달러)
@@ -156,6 +163,9 @@
 | 가입창(아이디·이메일·비번, DB 저장) | 가입·로그인 탭, 계정 저장소에 기억 | `auth.js` signup, `app.js` openLogin, `tools/apps_script/Code.gs` |
 | Claude 넘김이 실제로 동작하나? | 실제 API를 호출한다. 가짜 키로 401을 받아 경로가 열려 있음을 확인 | `core/ai.js` |
 | 문장 해석하면 P1이 사라짐, 비교 창에 P1·P2 | 여러 포트폴리오일 때 편집 중인 탭에만 넣기(되돌리기·'전부 새로 만들기'), 비교 창에 내 포트폴리오 켜고 끄기·새로 만들기 | `backtest.js` interpret, mergeIntoActive, openCompare, addPortfolio, run(inc) |
+| 추천 1번 규칙이 '언제 돌아오나' 불명확 | 행동 규칙(평소·확인·팔기·돌아오기)·피신 횟수·지금 상태, 휴대폰 카드 넘침 수정 | `core/finder.js` candRule, `views/finder.js` ruleBlock |
+| 내 자산 새 계좌 안 눌림·계좌 정리·모아보기·원화/달러 총액 | 창 안에서 바로 새 계좌, 별칭 중심, 계좌 칩·계좌별 한눈에, 통화별 총액·누른 순간 환율 | `views/assets.js`, `core/holdings.js` refreshFx·valuate |
+| 목표·노후 저울·실행 목표 | 맨 위 카드 두 장(팀 협의: Opus 기획 → GPT 그림 → Fable 컨펌) | `views/goalcards.js`, `core/goalcalc.js`, `docs/plan_redesign/` |
 | 계정 저장소 배포 | 두 번 클릭 키트로 배포, 연결·동기화 확인 끝(1-2 ①) | `tools/apps_script/`, `config/backend.json` |
 
 ---
@@ -184,7 +194,9 @@
 | `js/ui/charts.js` | ECharts 래퍼(선 끝 라벨, 강조, markArea) |
 | `js/views/backtest.js` | 백테스트 화면(가장 큼, 약 1,000줄) |
 | `js/views/finder.js` | 전략 찾기 화면 |
-| `js/views/plan.js` | 목표·노후 화면 |
+| `js/views/plan.js` | 목표·노후 화면(맨 위 카드 + 자세한 계획) |
+| `js/views/goalcards.js` | 목표·노후 맨 위 카드: 돈의 가치 저울, 실행 목표 만들기, migratePlan |
+| `js/core/goalcalc.js` | 저울 환산, 네 질문 풀이(올림·대안), 구간 수익률과 같은 한 가지 수익률 |
 | `js/views/assets.js` | 내 자산 화면 |
 | `config/accounts.json` | 마스터 계정(h, salt, iter 310000, ver, role master, name 석스). 해시만 들어 있다. |
 | `config/backend.json` | 계정 저장소 웹 앱 주소(2026-11-21 연결) |
@@ -439,6 +451,7 @@
 **언제 무엇을 돌리나**
 - 계산을 바꾸면 run / timing / finder
 - 해석을 바꾸면 nlp_check
+- 목표·노후 맨 위 카드 계산을 바꾸면 goal_check(52개)
 - 화면을 바꾸면 shot.py 두 장
 - 색을 바꾸면 verify.mjs
 
@@ -452,8 +465,10 @@
 - 디자이너 에이전트가 중간에 멈추면 이미 쓴 문서로 진행했다.
 
 **GPT 디자이너**
-- 사용자 PC의 Codex CLI로 한다.
-- 브리프와 판정 규칙: `tools/agents/gpt_color_brief.md`
+- **이 채팅(클라우드)에서 바로 부를 수 있다**(2026-11-21 확인). `npm install @openai/codex`(0.171) 후 `npx codex login --device-auth`를 백그라운드로 돌리면 링크(https://auth.openai.com/codex/device)와 일회용 코드가 나온다. 사용자에게 링크·코드만 보내 로그인하게 한다(15분 유효). 새 컨테이너마다 다시 로그인해야 한다.
+- 부르기: `npx codex exec --skip-git-repo-check -C <작업 폴더> --sandbox workspace-write -o <답 파일> "$(cat 브리프.md)"`. 저장소는 읽기만 하게 하고 결과물은 작업 폴더에 받는다. 시안은 Playwright로 찍어 확인한다(Codex 쪽 Chrome은 안 뜸).
+- 사용자 PC의 Codex CLI로도 된다. 색 브리프와 판정 규칙: `tools/agents/gpt_color_brief.md`
+- 팀 협의 순서(목표·노후 때 씀): Claude 초안 → Opus 검토(agent, model opus)·GPT 시안(Codex) 동시에 → Fable 컨펌(agent, model fable) → 구현. 기록은 `docs/plan_redesign/`.
 
 **PC 쪽 Claude Code ↔ Codex CLI**
 - Claude Code가 Codex에게: `codex exec --skip-git-repo-check "…"`. 저장된 로그인을 다시 쓴다. `-o 파일`로 답을 파일에 받는다. 제안만 받을 때는 `--sandbox read-only`.
@@ -506,5 +521,8 @@
 | `ab0ef15` | 배포 스크립트 BOM 중복 수정, API 페이지 먼저 열기, 실행 전 문법 검사 |
 | `a3f5337` | 계정 저장소 연결(backend.json) |
 | `c21ead3` | 문장 해석 시 다른 포트폴리오 유지, 비교 창에 P1·P2·P3 |
+| `8323a6c` | 전략 찾기 추천을 행동 규칙으로, 피신 횟수·지금 상태 |
+| `1d0169e` | 내 자산 계좌 정리, 모아보기 계좌별, 원화·달러 총액, 누른 순간 환율 |
+| `ba806c8` | 목표·노후 돈의 가치 저울·실행 목표 만들기 |
 
 그 사이의 'stock: 시세 갱신 …'은 봇 커밋이다.
