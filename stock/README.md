@@ -16,7 +16,8 @@ https://hangseokemail-spec.github.io/stock/ — 한국·미국 주식·ETF 백�
   - `js/views/` 화면 세 개, `js/ui/` 공통(서식·차트·DOM)
 - `data/` — 시세 데이터베이스(GitHub Actions가 갱신)
   - `universe.json` 종목 목록·최근 종가, `px/<키>.json` 일별 종가(분할 반영)·배당, `monthly_<그룹>.json` 순위 전략용 월간 표, `kr_all.json` 국내 전 종목·ETF 이름과 시세, `extra_tickers.txt` 추가 종목
-- `tools/` — 수집기(`fetch_data.py`, `universe_seed.py`)
+- `tools/` — 수집기(`fetch_data.py`, `universe_seed.py`), 계정 저장소(`apps_script/`), 화면 확인 스크립트(`dev/`), 색 검사(`design_check/`)
+- `HANDOFF.md` — 작업 인수인계용 세부 지침서
 - `tests/` — 수치 검증(`node tests/run.mjs`: 퀀트 기대값 96개 + 포트폴리오 비주얼라이저 대조, `timing_check.mjs` 타이밍 20개, `finder_check.mjs` 전략 찾기)
 
 ## 데이터 갱신
