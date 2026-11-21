@@ -1,1 +1,16 @@
-{"updated":"2026-11-21T12:22:34Z","fetched":884,"incremental":884,"full":0,"failed":[],"files_changed":0,"tr_check_worst":[]}
+{
+ "updated": "2026-11-21T14:39:44Z",
+ "fetched": 884,
+ "incremental": 884,
+ "full": 0,
+ "failed": [],
+ "files_changed": 0,
+ "tr_check_worst": [],
+ "fund": {
+  "KR_STOCK": {
+   "updated": "2026-11-21T14:39:43Z",
+   "tickers": 159,
+   "nodata": 4
+  }
+ }
+}
