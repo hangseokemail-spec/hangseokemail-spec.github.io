@@ -560,3 +560,7 @@ body.locked { overflow: hidden; }
 .event-row > input.input:first-child { grid-column: 1 / -1; }
 .event-row > .kr-hint { grid-column: 2 / 3; margin-top: -4px; }
 .event-row > .row { grid-column: 1 / -1 !important; }
+
+.login-tabs { width: 100%; }
+.login-tabs button { flex: 1; }
+.login-note { margin: 0 !important; text-align: center; }

@@ -6,7 +6,7 @@ import { initPlan } from './views/plan.js';
 import { initAssets } from './views/assets.js';
 import { initFinder } from './views/finder.js';
 import { esc } from './ui/format.js';
-import { login, restoreSession, logout, currentUser, exportVault, importVault } from './core/auth.js';
+import { login, signup, backend, setBackendOverride, pingBackend, restoreSession, logout, currentUser, exportVault, importVault } from './core/auth.js';
 
 const TABS = ['backtest', 'finder', 'plan', 'assets'];
 const PRIVATE_TABS = new Set(['plan', 'assets']);
@@ -32,34 +32,56 @@ function show(tab) {
 }
 
 // ------------------------------------------------------------------ 로그인
-function openLogin(fromLocked = false) {
+function openLogin(fromLocked = false, mode = 'login') {
   if (document.querySelector('.login-screen')) return;
   const box = document.createElement('div');
   box.className = 'login-screen';
-  box.innerHTML = `<form class="login-card" autocomplete="on">
-      <div class="login-brand"><span class="logo"></span>Seok's Stock</div>
-      <h1>${fromLocked ? '목표·노후와 내 자산은 로그인해야 볼 수 있어요' : '로그인'}</h1>
-      <p class="cap">개인 계획과 자산은 계정별로 암호화해서 이 기기에 저장해요.</p>
-      <label class="field">아이디<input class="input" name="username" id="lg_id" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
-      <label class="field">비밀번호<input class="input" name="password" id="lg_pw" type="password" autocomplete="current-password" required></label>
-      <label class="toggle"><input type="checkbox" id="lg_keep" checked> 이 기기에서 로그인 유지</label>
-      <p class="login-err" id="lg_err" role="alert"></p>
-      <button class="btn primary big" type="submit" id="lg_go">들어가기</button>
-      <button class="btn ghost" type="button" id="lg_guest">로그인 없이 백테스트·전략 찾기만 보기</button>
-    </form>`;
   document.body.appendChild(box);
   document.body.classList.add('locked');
-  setTimeout(() => $('#lg_id', box).focus(), 30);
-  $('#lg_guest', box).onclick = () => { box.remove(); document.body.classList.remove('locked'); document.body.classList.add('guest'); if (!inited.backtest) show(location.hash.slice(1) || 'backtest'); };
-  $('form', box).onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = $('#lg_go', box); btn.disabled = true; btn.textContent = '확인 중…'; $('#lg_err', box).textContent = '';
-    const r = await login($('#lg_id', box).value, $('#lg_pw', box).value, $('#lg_keep', box).checked);
-    if (!r.ok) { $('#lg_err', box).textContent = r.error; btn.disabled = false; btn.textContent = '들어가기'; $('#lg_pw', box).select(); return; }
+  const done = async (r) => {
+    if (!r.ok) return false;
     const want = sessionStorage.getItem('ss.afterLogin'); sessionStorage.removeItem('ss.afterLogin');
     if (want) history.replaceState(null, '', `#${want}`);
     location.reload(); // 계정 데이터로 처음부터 그림
+    return true;
   };
+  const draw = async () => {
+    const remote = !!(await backend());
+    box.innerHTML = `<form class="login-card" autocomplete="on" novalidate>
+      <div class="login-brand"><span class="logo"></span>Seok's Stock</div>
+      <div class="seg login-tabs" role="tablist"><button type="button" data-m="login" aria-pressed="${mode === 'login'}">로그인</button><button type="button" data-m="signup" aria-pressed="${mode === 'signup'}">가입하기</button></div>
+      ${mode === 'login' ? `
+        <h1>${fromLocked ? '목표·노후와 내 자산은 로그인해야 볼 수 있어요' : '다시 오셨네요'}</h1>
+        <label class="field">아이디<input class="input" name="username" id="lg_id" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+        <label class="field">비밀번호<input class="input" name="password" id="lg_pw" type="password" autocomplete="current-password" required></label>`
+      : `
+        <h1>처음이세요? 세 가지만 넣으면 돼요</h1>
+        <label class="field">아이디<input class="input" name="username" id="su_id" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="영문 소문자·숫자 3~20자" required></label>
+        <label class="field">이메일<input class="input" name="email" id="su_em" type="email" autocomplete="email" placeholder="you@example.com" required></label>
+        <label class="field">비밀번호<input class="input" name="new-password" id="su_pw" type="password" autocomplete="new-password" placeholder="6자 이상" required></label>
+        <label class="field">비밀번호 확인<input class="input" id="su_pw2" type="password" autocomplete="new-password" required></label>
+        <p class="cap">${remote ? '계정은 운영자 구글 드라이브의 계정 저장소에 기억돼요(비밀번호 원문은 저장하지 않아요). 다음부터는 아이디·비밀번호만 넣으면 어느 기기에서든 들어와요.' : '지금은 계정 저장소가 연결되기 전이라 이 기기에 계정을 기억해요. 연결되면 다른 기기에서도 같은 아이디로 들어올 수 있어요.'}</p>`}
+      <label class="toggle"><input type="checkbox" id="lg_keep" checked> 이 기기에서 로그인 유지</label>
+      <p class="login-err" id="lg_err" role="alert"></p>
+      <button class="btn primary big" type="submit" id="lg_go">${mode === 'login' ? '들어가기' : '가입하고 들어가기'}</button>
+      <button class="btn ghost" type="button" id="lg_guest">로그인 없이 백테스트·전략 찾기만 보기</button>
+      <p class="cap login-note">개인 계획과 자산은 계정마다 암호화해서 저장해요. 운영자도 내용을 볼 수 없어요.</p>
+    </form>`;
+    setTimeout(() => $(mode === 'login' ? '#lg_id' : '#su_id', box)?.focus(), 30);
+    $$('[data-m]', box).forEach((b) => { b.onclick = () => { mode = b.dataset.m; draw(); }; });
+    $('#lg_guest', box).onclick = () => { box.remove(); document.body.classList.remove('locked'); document.body.classList.add('guest'); if (!inited.backtest) show(location.hash.slice(1) || 'backtest'); };
+    $('form', box).onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $('#lg_go', box), err = $('#lg_err', box), label = btn.textContent;
+      btn.disabled = true; btn.textContent = '확인 중…'; err.textContent = '';
+      const keep = $('#lg_keep', box).checked;
+      const r = mode === 'login' ? await login($('#lg_id', box).value, $('#lg_pw', box).value, keep)
+        : await signup({ id: $('#su_id', box).value, email: $('#su_em', box).value, pw: $('#su_pw', box).value, pw2: $('#su_pw2', box).value, remember: keep });
+      if (await done(r)) return;
+      err.textContent = r.error; btn.disabled = false; btn.textContent = label;
+    };
+  };
+  draw();
 }
 function renderAccount() {
   const u = currentUser();
@@ -135,12 +157,15 @@ function openSettings() {
     <label class="field">Claude API 키 (선택)<input class="input" id="s_key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(st.apiKey)}"></label>
     <p class="cap">키는 계정 저장소에 암호화돼 이 기기에만 저장되고 Anthropic으로만 전송돼요. 공용 컴퓨터에서는 넣지 마세요. 키가 있으면 복잡한 문장 해석과 계좌 캡처 인식에 Claude를 쓰고, 없으면 기본 해석기와 기기 안 글자 인식(OCR)으로 동작해요.</p>
     <label class="field">모델<select class="input" id="s_model">${['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'].map((m) => `<option ${st.model === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+    ${currentUser()?.role === 'master' ? `<label class="field">계정 저장소 주소(구글 Apps Script 웹 앱 URL)<input class="input" id="s_backend" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(localStorage.getItem('ss.backendUrl') || '')}"></label><div class="row"><button class="btn small" type="button" id="s_ping">연결 확인</button><span class="cap" id="s_pingr"></span></div><p class="cap">이 주소가 있으면 가입한 계정과 암호화된 개인 데이터를 운영자 구글 드라이브에 기억해 어느 기기에서든 같은 아이디로 들어와요. 여기 넣은 주소는 이 기기에서만 쓰여요. 모든 기기에 적용하려면 Claude에게 주소를 알려 주세요(저장소에 반영).</p>` : ''}
     <div class="row"><button class="btn small" type="button" id="s_export">암호화 백업 내보내기</button><label class="btn small">백업 가져오기<input type="file" accept="application/json" id="s_import" hidden></label></div><p class="cap">암호화 백업은 같은 아이디·비밀번호로 로그인한 기기에서만 풀려요. 휴대폰과 PC가 같은 데이터를 쓰려면 이 파일로 옮기세요.</p>
   </div><div class="actions"><button class="btn" type="button" data-close>닫기</button><button class="btn primary" type="button" data-ok>저장</button></div>`);
   $$('.seg button', s.root).forEach((b) => b.addEventListener('click', () => { $$('button', b.parentElement).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }));
   const pressed = (id) => $(`#${id} button[aria-pressed="true"]`, s.root)?.dataset.v;
   $('[data-close]', s.root).onclick = s.close;
+  $('#s_ping', s.root)?.addEventListener('click', async () => { const u = $('#s_backend', s.root).value.trim(); const o = $('#s_pingr', s.root); o.textContent = '확인 중…'; try { o.textContent = (await pingBackend(u)) ? '✓ 연결됐어요' : '응답이 이상해요(배포 설정 확인)'; } catch (e) { o.textContent = `연결 실패: ${e.message}`; } });
   $('[data-ok]', s.root).onclick = () => {
+    if ($('#s_backend', s.root)) setBackendOverride($('#s_backend', s.root).value.trim());
     saveSettings({ theme: pressed('s_theme'), updown: pressed('s_updown'), currency: pressed('s_cur'), altStyle: pressed('s_alt'), bandAbs: +$('#s_band', s.root).value || 3, capSingle: +$('#s_cap1', s.root).value || 20, capProduct: +$('#s_cap2', s.root).value || 25, apiKey: $('#s_key', s.root).value.trim(), model: $('#s_model', s.root).value, feeBp: Math.round((+$('#s_fee', s.root).value || 0) * 100) });
     s.close(); toast('설정을 저장했어요.');
   };
