@@ -41,6 +41,13 @@ jobs:
           FULL=""
           if [ "${{ github.event.schedule }}" = "10 22 * * 6" ] || [ "${{ inputs.full }}" = "true" ]; then FULL="--full"; fi
           python stock/tools/fetch_data.py --workers 4 $FULL
+      - name: fundamentals
+        # 실적(분기 매출·영업이익·순이익·EPS): 새 분기가 나올 때가 된 종목만 받아 붙임. 실패해도 시세 갱신은 계속
+        continue-on-error: true
+        env:
+          SEC_UA: ${{ vars.SEC_UA }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python stock/tools/fetch_fund.py
       - name: commit
         run: |
           git config user.name "seoks-stock-bot"

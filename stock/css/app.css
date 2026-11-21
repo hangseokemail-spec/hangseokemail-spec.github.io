@@ -1061,3 +1061,8 @@ a.btn { text-decoration: none; }
 @media (max-width: 420px) { .rp2-step { padding: var(--sp-3); } .rp2-v { font-size: 17px; } .rp2-step .cap { font-size: 12px; } }
 .rp2-fixes { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 @media (max-width: 640px) { .as-toolbar .btn { min-height: 40px; padding: 0 10px; font-size: 14px; } .as-toolbar .icon-btn { width: 40px; height: 40px; } }
+/* 순위 전략: 실적 조건 */
+.ff-row { gap: 6px; }
+.ff-inputs { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 8px; }
+@media (max-width: 480px) { .ff-inputs { grid-template-columns: 1fr; } }
+.ff-inputs .input-unit .input { padding-right: 62px; }

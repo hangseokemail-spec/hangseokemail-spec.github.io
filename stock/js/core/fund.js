@@ -1,0 +1,85 @@
+// 실적(펀더멘털) 지표: data/fund/<그룹>.json의 분기 매출·영업이익·순이익·EPS와 공시일로
+// '그 달 말에 알 수 있던' 최신 분기 기준 성장률·이익률을 계산한다(공시 전 값은 쓰지 않음).
+import { loadFund } from './data.js';
+
+export const FUND_METRICS = {
+  rev_yoy: { label: '매출 성장률(전년 같은 분기 대비)', short: '매출 성장률 YoY' },
+  rev_qoq: { label: '매출 성장률(직전 분기 대비)', short: '매출 성장률 QoQ' },
+  oi_yoy: { label: '영업이익 성장률(전년 같은 분기 대비)', short: '영업이익 성장률 YoY' },
+  oi_qoq: { label: '영업이익 성장률(직전 분기 대비)', short: '영업이익 성장률 QoQ' },
+  ni_yoy: { label: '순이익 성장률(전년 같은 분기 대비)', short: '순이익 성장률 YoY' },
+  ni_qoq: { label: '순이익 성장률(직전 분기 대비)', short: '순이익 성장률 QoQ' },
+  eps_yoy: { label: 'EPS 성장률(전년 같은 분기 대비)', short: 'EPS 성장률 YoY' },
+  eps_qoq: { label: 'EPS 성장률(직전 분기 대비)', short: 'EPS 성장률 QoQ' },
+  opm: { label: '영업이익률(최근 4분기)', short: '영업이익률' },
+  npm: { label: '순이익률(최근 4분기)', short: '순이익률' },
+};
+export const isFundMetric = (m) => typeof m === 'string' && m.startsWith('f:') && FUND_METRICS[m.slice(2)] != null;
+
+const toDate = (n) => new Date(Date.UTC(Math.floor(n / 10000), Math.floor(n / 100) % 100 - 1, n % 100));
+const gap = (a, b) => Math.round((toDate(b) - toDate(a)) / 864e5);
+// 성장률: 기준 값이 0 이하이면(적자에서 흑자 등) 비율이 뜻이 없어 비움
+const growth = (cur, prev) => (cur != null && prev != null && prev > 0 ? cur / prev - 1 : null);
+
+/** 분기 표 → 분기마다 지표 */
+export function quarterMetrics(q) {
+  const out = [];
+  for (let i = 0; i < q.length; i++) {
+    const [end, filed, rev, oi, ni, eps] = q[i];
+    const p = i > 0 && gap(q[i - 1][0], end) >= 75 && gap(q[i - 1][0], end) <= 105 ? q[i - 1] : null;
+    let y = null;
+    for (let j = i - 1; j >= Math.max(0, i - 6); j--) { const g = gap(q[j][0], end); if (g >= 350 && g <= 380) { y = q[j]; break; } }
+    let opm = null, npm = null;
+    if (i >= 3) {
+      let ok = true;
+      for (let j = i - 2; j <= i; j++) { const g = gap(q[j - 1][0], q[j][0]); if (g < 75 || g > 105) ok = false; }
+      const four = q.slice(i - 3, i + 1);
+      const sr = four.reduce((t, r) => (r[2] == null ? NaN : t + r[2]), 0);
+      if (ok && sr > 0) {
+        const so = four.reduce((t, r) => (r[3] == null ? NaN : t + r[3]), 0);
+        const sn = four.reduce((t, r) => (r[4] == null ? NaN : t + r[4]), 0);
+        opm = isFinite(so) ? so / sr : null;
+        npm = isFinite(sn) ? sn / sr : null;
+      }
+    }
+    out.push({
+      end, filed,
+      rev_yoy: growth(rev, y?.[2]), rev_qoq: growth(rev, p?.[2]),
+      oi_yoy: growth(oi, y?.[3]), oi_qoq: growth(oi, p?.[3]),
+      ni_yoy: growth(ni, y?.[4]), ni_qoq: growth(ni, p?.[4]),
+      eps_yoy: growth(eps, y?.[5]), eps_qoq: growth(eps, p?.[5]),
+      opm, npm,
+    });
+  }
+  return out;
+}
+
+/** 실적 DB를 종목별 지표로 준비 */
+export function prepFund(db) {
+  const by = new Map();
+  for (const [k, v] of Object.entries(db?.t || {})) if (v.q?.length) by.set(k, quarterMetrics(v.q));
+  return { by, updated: db?.updated, src: db?.src };
+}
+
+const prepCache = new Map();
+export async function loadFundPrep(group) {
+  if (!prepCache.has(group)) prepCache.set(group, loadFund(group).then((db) => (db ? prepFund(db) : null)).catch(() => null));
+  return prepCache.get(group);
+}
+
+/** ym(YYYYMM) 달 말에 리밸런싱할 때 쓸 수 있는 공시 마감일: 그 달 마지막 날 이틀 전까지 공시된 분기만 */
+export function cutoffOf(ym) {
+  const y = Math.floor(ym / 100), m = ym % 100;
+  const last = new Date(Date.UTC(y, m, 0)); last.setUTCDate(last.getUTCDate() - 2);
+  return last.getUTCFullYear() * 10000 + (last.getUTCMonth() + 1) * 100 + last.getUTCDate();
+}
+
+/** 공시일 ≤ cutoff인 분기 중 가장 최근 것의 지표. 그 분기가 너무 오래됐으면(분기말 200일 넘게 지남) null */
+export function fundAt(prep, key, cutoff) {
+  const arr = prep?.by.get(key);
+  if (!arr) return null;
+  let best = null;
+  for (const x of arr) if (x.filed <= cutoff && (!best || x.end > best.end)) best = x;
+  if (!best || gap(best.end, cutoff) > 200) return null;
+  return best;
+}

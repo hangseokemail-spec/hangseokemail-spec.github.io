@@ -1,5 +1,6 @@
 // 백테스트 엔진 — 순수 계산(화면과 무관). 일별로 보유 수량을 따라가며 평가합니다.
 import { loadPx, loadMonthly, assetInfo, assetCats } from './data.js';
+import { FUND_METRICS, isFundMetric, loadFundPrep, fundAt, cutoffOf } from './fund.js';
 import { dayToYm, ymAdd, firstDayOfYm, todayYm, ymDiff, parseYm } from './dates.js';
 import { planTiming, checkMask, alignTo, monthlyRet, DEF_LABEL } from './signals.js';
 
@@ -11,7 +12,7 @@ export function defaultStrategy() {
     name: '포트폴리오 1',
     kind: 'static',              // static | rank
     assets: [],                  // [{key, w}] w: % (합 100)
-    rank: null,                  // {group, metric: mcap|mom|lowvol, top, lookback, skip, weighting: equal|mcap|invvol}
+    rank: null,                  // {group, metric: mcap|mom|lowvol|f:<실적 지표>, top, lookback, skip, weighting: equal|mcap|invvol, ff: {key, min(%)} 실적 조건}
     start: null, end: null,      // 'YYYY-MM' (포함)
     rebalance: 'A',              // none | M | Q | S | A | band
     band: { abs: 5, rel: 0 },    // %p, % (band일 때)
@@ -316,7 +317,26 @@ async function runRank(s, onProgress) {
   const lastTblYm = M[M.length - 1];
   let endYm = s.end ? Math.min(parseYm(s.end), lastCompleteYm(firstDayOfYm(lastTblYm))) : lastCompleteYm(firstDayOfYm(lastTblYm));
   const need = r.metric === 'mom' ? r.lookback + (r.skip || 0) : r.metric === 'lowvol' ? r.lookback : 0;
-  const earliest = ymAdd(M[0], need + 1);
+  // 실적 지표(순위 기준 또는 조건)
+  const fKey = isFundMetric(r.metric) ? r.metric.slice(2) : null;
+  const ff = r.ff?.key && FUND_METRICS[r.ff.key] && r.ff.min != null && r.ff.min !== '' ? { key: r.ff.key, min: +r.ff.min / 100 } : null;
+  let fprep = null;
+  if (fKey || ff) {
+    if (!r.group.endsWith('STOCK')) throw new Error('실적 지표는 개별 주식에서만 쓸 수 있어요(ETF는 실적 자료가 없어요).');
+    fprep = await loadFundPrep(r.group);
+    if (!fprep) throw new Error(r.group.startsWith('KR') ? '국내 주식 실적 자료는 아직 준비 중이에요. 지금은 미국 주식에서만 쓸 수 있어요.' : '실적 자료를 불러오지 못했어요.');
+  }
+  let earliest = ymAdd(M[0], need + 1);
+  if (fprep) {
+    // 실적 지표가 있는 종목이 15개 이상인 첫 달부터
+    const k0 = fKey || ff.key;
+    for (let m = mi.get(200901) ?? 0; m < M.length; m++) {
+      const cut = cutoffOf(M[m]);
+      let n = 0;
+      for (const t of tbl.tickers) { const f = fundAt(fprep, t, cut); if (f && f[k0] != null) n++; }
+      if (n >= 15) { earliest = Math.max(earliest, ymAdd(M[m], 1)); break; }
+    }
+  }
   let startYm = s.start ? parseYm(s.start) : ymAdd(endYm, -119);
   if (startYm < earliest) { startYm = earliest; notes.push(`데이터가 있는 ${fmtYm(earliest)}부터 계산했습니다.`); }
 
@@ -329,11 +349,15 @@ async function runRank(s, onProgress) {
     const m = mi.get(ym);
     if (m === undefined) continue;
     const cand = [];
+    const cut = fprep ? cutoffOf(ym) : 0;
     for (let ti = 0; ti < tbl.tickers.length; ti++) {
       const tr = val(tbl.tr, ti, m);
       if (tr == null) continue;
-      let score = null;
-      if (r.metric === 'mcap') score = val(tbl.mc, ti, m);
+      let score = null, fv = null;
+      const fd = fprep ? fundAt(fprep, tbl.tickers[ti], cut) : null;
+      if (ff) { fv = fd?.[ff.key] ?? null; if (fv == null || fv < ff.min) continue; }
+      if (fKey) score = fd?.[fKey] ?? null;
+      else if (r.metric === 'mcap') score = val(tbl.mc, ti, m);
       else if (r.metric === 'mom') {
         const a = val(tbl.tr, ti, m - (r.skip || 0));
         const b = val(tbl.tr, ti, m - (r.skip || 0) - r.lookback);
@@ -352,7 +376,7 @@ async function runRank(s, onProgress) {
         }
       }
       if (score == null || !isFinite(score)) continue;
-      cand.push({ k: tbl.tickers[ti], score, mc: val(tbl.mc, ti, m), vol: val(tbl.vol, ti, m) });
+      cand.push({ k: tbl.tickers[ti], score, mc: val(tbl.mc, ti, m), vol: val(tbl.vol, ti, m), fv });
     }
     const ex = new Set(r.exclude || []);
     const exCats = new Set(r.excludeCats || []);
@@ -440,6 +464,10 @@ export function capWeights(w, cap) {
 
 function rankDisclaimer(r) {
   const base = '순위 전략은 지금 수집 목록(현재 대형주 중심)에 있는 종목만 후보로 삼아, 과거에 상장폐지·탈락한 종목이 빠져 있습니다(생존 편향).';
+  const fund = isFundMetric(r.metric) || r.ff?.key
+    ? ' 실적은 SEC 공시(XBRL)의 분기 값이고, 달말 이틀 전까지 공시된 분기만 그 달말에 썼습니다(그때 알 수 없던 값은 쓰지 않음). 성장률은 기준 분기가 적자·0이면 계산하지 않고, 이익률은 최근 4분기 합으로 셉니다. 미국 외 회사(TSMC·ASML 등)는 분기 공시가 없어 빠집니다.'
+    : '';
+  if (fund) return `${base} 그달 시가총액 상위 ${r.poolTop ?? 50}개 안에서 골랐습니다.${fund}`;
   if (r.metric === 'mcap') return `${base} 과거 시가총액은 종가×상장주식수로 추정하며, 과거 주식수가 없는 기간은 가장 오래된 주식수를 씁니다.`;
   if (r.group.endsWith('STOCK')) return `${base} 그래서 모멘텀·저변동성은 그달 시가총액 상위 ${r.poolTop ?? 50}개 안에서만 골라, 지금 큰 종목을 과거에 미리 고르는 편향을 줄였습니다.`;
   return base;

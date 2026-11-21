@@ -87,6 +87,13 @@ export async function loadMonthly(group) {
   return p;
 }
 
+/** 실적(펀더멘털) DB: data/fund/<그룹>.json(없으면 null) */
+const fundCache = new Map();
+export async function loadFund(group) {
+  if (!fundCache.has(group)) fundCache.set(group, loader(`fund/${group}.json`).catch(() => null));
+  return fundCache.get(group);
+}
+
 export async function loadKrAll() { return loader('kr_all.json'); }
 export async function loadMeta() { const m = await loader('meta.json'); if (m?.updated) dataVersion = m.updated; return m; }
 

@@ -1,6 +1,6 @@
 # Seok's Stock 세부 지침서 (작업 인수인계)
 
-기준: 2026-11-21 16:50 KST · 리포트 탭·대안 그래프 비교 커밋 `09f1a1f`
+기준: 2026-11-21 17:50 KST · 실적(펀더멘털) 순위 전략 추가(미국), 국내는 DART 인증키 대기
 이 문서 하나만 읽으면 새 채팅(또는 PC의 Claude Code)에서 바로 이어 갈 수 있게 정리했다. 짧은 소개는 프로젝트 문서 `claude/seoks-stock-개요.md`에 있다.
 
 ---
@@ -21,6 +21,7 @@
    node tests/timing_check.mjs # 통과 20 / 실패 0
    node tests/goal_check.mjs   # 통과 52 / 실패 0
    node tests/mc_check.mjs     # 통과 10 / 실패 0
+   node tests/fund_check.mjs   # 통과 19 / 실패 0
    node tests/finder_check.mjs # 추천 규칙 목록이 출력되면 정상
    ```
 4. **로컬로 띄운다.** 저장소 루트에서 `python3 -m http.server 8765`를 실행하고 `http://localhost:8765/stock/`을 연다. 화면 확인은 9절의 Playwright 스크립트를 쓴다.
@@ -48,6 +49,7 @@
 - 비교 창('무엇과 비교할까요?') 맨 위 '내 포트폴리오': P1·P2·P3를 켜고 끈다(`pf.off`, 꺼진 것은 계산·문장에서 빠지고 탭이 점선). 하나는 꼭 남는다. '+ 새 포트폴리오 만들어 비교'로 탭을 만든다.
 - 비교 대상 최대 6개, 최근 실행 10개
 - 매수·매도 타이밍 프리셋 11개와 직접 설정, 조건부 리밸런싱
+- 순위 기준·조건에 **실적(펀더멘털)**: 매출·영업이익·순이익·EPS 성장률(전년 같은 분기 대비 YoY / 직전 분기 대비 QoQ), 영업이익률·순이익률(최근 4분기). 미국 주식만(SEC 공시, 2009년~). '실적 조건'(예: 영업이익률 20% 이상)을 넘는 종목 안에서만 고를 수 있다(`rank.ff = {key, min}`). 문장으로도 된다: '영업이익률 20% 이상 미국 주식 중 매출 성장률 상위 10개'. 순위 기준 값은 `metric: 'f:rev_yoy'`처럼 씀.
 - 그래프 선 끝 라벨은 오른쪽 여백에 HTML로 펼쳐 놓고 꺾은 선으로 잇는다(`charts.js` bindEndOverlay, 시리즈에 `endText`). 겹치면 3줄 → 2줄 → 1줄로 줄이고, 라벨에 손을 올리면 그 선 강조
 - 수익률 ▲▼(색 없이도 방향이 보이게): KPI·범례·연도별·롤링·자산·지표 표(`backtest.js` pa/ppa)
 - 보유 변화: '한눈 지도'(종목 × 다시 고른 때/달, 진하기 = 비중, 노란 테두리 = 새로 들어옴, 회색 줄 = 피신처)와 '카드'를 바꿔 봄(holdMap)
@@ -139,6 +141,12 @@
   3. 넓은 화면과 휴대폰 스크린샷으로 비교한다.
   4. Fable(Agent, model: fable)에게 컨펌을 받는다.
 
+#### ④ 국내 실적 — OpenDART 인증키가 필요(2026-11-21)
+- 국내 분기 실적을 과거부터(2015년~) 공시일과 함께 받을 수 있는 곳은 OpenDART(금감원 전자공시) API다. 무료이고 https://opendart.fss.or.kr 에서 가입 후 바로 인증키가 나온다(하루 2만 회).
+- 사용자가 할 일: 인증키를 GitHub 저장소 Settings → Secrets → Actions에 `DART_API_KEY`로 넣는다(공개 저장소·채팅 기록에 원문을 남기지 않는다). 그다음 Claude가 `fetch_fund.py`에 국내 부분(corpCode → 분기·반기·3분기·사업보고서 주요 계정, 접수일 = 공시일)을 만들고 Actions에서 한 번 채운다.
+- 네이버 금융·야후는 최근 5~6분기만 있어서 백테스트용 과거 자료로는 부족하다. 한국투자증권 API의 재무 조회는 공시일이 없어 '그때 알 수 있었던 값'을 맞추기 어렵다 → DART를 쓴다.
+- 미국 SEC는 User-Agent에 연락처를 요구한다. 지금은 일반 이름으로도 받아지지만, 막히면 저장소 Settings → Variables에 `SEC_UA`(예: "이름 연락처 이메일")를 넣으면 Actions가 그걸 쓴다.
+
 ### 1-3. 보류 (Fable §4, 요청이 있을 때)
 - 지출 영수증·바구니 그림
 - 물가 잠식 빗금(erosion hatch)
@@ -198,12 +206,14 @@
 | `js/views/report.js` | 리포트 탭(한 장 요약) |
 | `js/views/goalcards.js` | 목표 탭 카드: 돈의 가치 저울, 실행 목표 조건·답·다른 길, loadGoal, migratePlan |
 | `js/core/montecarlo.js` | 몬테카를로(블록 재표집, 씨앗 고정) |
+| `js/core/fund.js` | 실적 지표: FUND_METRICS, quarterMetrics, fundAt(공시일 기준), cutoffOf, loadFundPrep |
 | `js/core/goalcalc.js` | 저울 환산, 네 질문 풀이(올림·대안), 구간 수익률과 같은 한 가지 수익률 |
 | `js/views/assets.js` | 내 자산 화면 |
 | `config/accounts.json` | 마스터 계정(h, salt, iter 310000, ver, role master, name 석스). 해시만 들어 있다. |
 | `config/backend.json` | 계정 저장소 웹 앱 주소(2026-11-21 연결) |
 | `data/` | 시세 DB(8절) |
 | `tools/fetch_data.py`, `tools/universe_seed.py` | 시세 수집기, 종목 목록 |
+| `tools/fetch_fund.py` | 실적 수집기(SEC companyfacts, 증분·`--full`·`--only`). 국내는 `DART_API_KEY`가 생기면 추가 |
 | `tools/make_account.mjs` | 계정 항목 만들기: `node tools/make_account.mjs <아이디> <비밀번호> [role] [이름]` → 출력을 accounts.json에 |
 | `tools/apps_script/` | 계정 저장소 코드와 배포 키트(`배포하기.cmd` 두 번 클릭 → `deploy.ps1`), `mock_server.mjs` |
 | `tools/agents/gpt_color_brief.md` | GPT 색 제안 요청문과 받아들이는 규칙 |
@@ -259,6 +269,14 @@
   - 산점도 축 고정: x −60..0, y −5..max(30, 목표×2.5). 범위 밖 점은 속이 빈 점으로 그린다.
   - 목표 영역은 zone-fill로 칠한다.
   - 목표를 지킨 규칙이 없으면 완화 칩을 보여 준다.
+
+### 실적 (`core/fund.js`, `tools/fetch_fund.py`)
+- 분기 표 한 줄 = [분기말, 공시일, 매출, 영업이익, 순이익, 희석 EPS]. 같은 분기가 여러 번 공시되면 **처음 공시된 값과 그 날짜**(나중에 고친 값으로 과거를 미리 보지 않게).
+- 태그: 매출은 여러 태그 중 그 분기 가장 큰 값(전체 매출 > 부분 매출), 영업이익 `OperatingIncomeLoss`(은행은 없음), 순이익 `NetIncomeLoss` 우선, EPS `EarningsPerShareDiluted` 우선. 4분기는 같은 태그의 10-K 연간 − 1~3분기(연간 공시일까지 나온 가장 최근 분기 값), 공시일은 10-K 날짜.
+- 지주회사 전환으로 CIK가 바뀐 종목은 예전 CIK도 이어 붙인다(`PRED`: XOM, GOOGL, DIS, BLK, ETN, LIN, MDT, MRVL, AVGO).
+- 지표: YoY = 분기말이 350~380일 전인 분기, QoQ = 75~105일 전 분기 대비. 기준 값이 0 이하이면 성장률 없음. 이익률 = 연속 4분기 합(영업이익 합 ÷ 매출 합).
+- 그달(ym) 말 리밸런싱에는 그 달 마지막 날 **이틀 전까지** 공시된 분기 중 가장 최근 것을 쓴다(`cutoffOf`). 그 분기말이 200일 넘게 지났으면 없음으로 본다.
+- runRank: 실적 지표는 그달 시총 상위 50개(poolTop) 안에서 순위. 실적 조건은 후보를 먼저 거른다. 실적이 있는 종목이 15개 이상인 첫 달 다음 달부터 시작(대략 2010년).
 
 ### 목표 → 노후 연결
 - `ss.goal = {inflation, scale:{today|then, years, last}, calc:{ask, target, initial, monthly, rate, years, link}, view}`. goalSummary(goal)이 답까지 채운 값(목표·기간·처음·매달·수익률)을 주고, 노후 탭 syncFromGoal이 `plan.link`가 켜진 칸만 맞춘다.
@@ -437,6 +455,12 @@
 - 수집할 때마다 적용되고, 네트워크 없이 `python3 tools/fetch_data.py --clean-only`로 지금 파일만 다시 정리할 수 있다(meta.json `cleaned`에 기록). 2026-11-21에 16개 파일을 정리해 커밋했다.
 - 미국 종목은 야후 분할 반영 종가 그대로(증분 수집 때 겹치는 날 0.2% 넘게 다르면 전체 재수집). 남은 큰 하루 변동(IONQ 2025.1 등)은 실제 사건이라 그대로 둠.
 
+**실적 DB (`data/fund/`)**
+- `US_STOCK.json`: `{updated, src, fields, nodata, t: {티커: {cik, at, q: [[분기말, 공시일, 매출, 영업이익, 순이익, EPS]…]}}}` 약 0.55MB, 159종목·2008년~. `sec_cik.json`: 티커 → CIK(EDGAR 검색 색인 efts로 찾음).
+- 자료 없음 6개: ARM, ASML, BABA, CCJ, NVO, TSM(미국 밖 회사라 20-F·40-F로 연간만 내고 분기 XBRL이 없음).
+- 갱신: `stock-data.yml`의 fundamentals 단계(실패해도 시세는 계속). 마지막 분기말이 75일 넘게 지났고 3일 안에 확인하지 않은 종목만 다시 받아 **없던 분기만 붙인다**(있는 분기 값은 그대로). 바뀌면 meta.json `updated`·`fund`도 갱신해 브라우저 캐시를 새로 받게 한다.
+- 이 컨테이너에서 Python urllib로 SEC를 부를 때 User-Agent에 공백·괄호가 있으면 403이 났다. 기본값 `SeoksStock-research/1.0`. `www.sec.gov`(티커 목록)는 403이라 efts를 쓴다.
+
 **수집기와 주의**
 - 수집기는 `tools/fetch_data.py`와 `tools/universe_seed.py`. `__pycache__`는 `tools/.gitignore`로 뺀다.
 - Actions에서 FRED가 시간 초과된 적이 있어서, 원/달러 보충은 로컬에서 하고 커밋했다.
@@ -447,7 +471,7 @@
 
 **테스트 (`tests/`)**
 - `run.mjs`: 퀀트 기대값 96개와 포트폴리오 비주얼라이저 대조. CAGR 11.44 vs 11.46, 변동성 12.29 vs 12.3, MDD −25.69 vs −25.7.
-- `timing_check.mjs` 20개, `goal_check.mjs` 52개, `mc_check.mjs` 10개, `finder_check.mjs`(추천 결과, 일별 엔진과 일치), `nlp_check.mjs`, `rank_check.mjs`, `pv_check.mjs`
+- `timing_check.mjs` 20개, `goal_check.mjs` 52개, `mc_check.mjs` 10개, `fund_check.mjs` 19개(공시일 전 값을 안 쓰는지, 애플 4분기 값, 실적 순위·조건), `finder_check.mjs`(추천 결과, 일별 엔진과 일치), `nlp_check.mjs`, `rank_check.mjs`, `pv_check.mjs`
 - 장기 확인값: VFINX 원화 1985년~ CAGR 12.51%, 60/40 달러 1987년~ 9.03%
 
 **화면 확인 (`tools/dev/`)** — Playwright와 `/usr/bin/google-chrome` 기준
@@ -472,7 +496,7 @@
 **언제 무엇을 돌리나**
 - 계산을 바꾸면 run / timing / finder
 - 해석을 바꾸면 nlp_check
-- 목표 탭 계산(goalcalc)을 바꾸면 goal_check(52개), 몬테카를로를 바꾸면 mc_check(10개)
+- 목표 탭 계산(goalcalc)을 바꾸면 goal_check(52개), 몬테카를로를 바꾸면 mc_check(10개), 실적 계산·수집기를 바꾸면 fund_check(19개)
 - 국내 시세 정리 규칙을 바꾸면 `--clean-only`를 돌리고 바뀐 파일 목록을 확인
 - 화면을 바꾸면 shot.py 두 장
 - 색을 바꾸면 verify.mjs
@@ -519,6 +543,7 @@
 ## 11. 알려진 한계·주의
 - **생존 편향**: 종목 목록이 '오늘' 기준이다. poolTop 50으로 줄였다. 과거 대형주 목록은 넣지 않기로 했다(사용자 결정). 합병돼 사라진 회사도 목록에 없다.
 - **국내 기업 행사**: 분할·합병·감자로 생긴 불가능한 하루 변동은 0으로 보정(8절). 그날의 실제 수익은 알 수 없어 0으로 둔 것이다.
+- **실적**: 미국 주식만. XBRL 의무화 전(2009년 이전)은 없다. 태그를 섞어 쓰는 회사는 드물게 한 분기가 튄다(예: IBM 2021년 4분기 매출은 킨드릴 분사로 연간 기준이 달라 작게 나옴). 미국 밖 회사 6개는 없음. EPS 4분기는 연간 − 1~3분기라 주식 수가 크게 바뀐 해는 근사.
 - **몬테카를로**: 과거 월수익률의 순서만 바꾼 것이라 과거에 없던 사건은 담지 못한다(화면에 안내).
 - **데이터 기간**: 국내는 2000년 이전 데이터가 없다. 원/달러 2003년 이전은 FRED 일별 자료다.
 - **전략 찾기**
@@ -551,5 +576,6 @@
 | `ba806c8` | 목표·노후 돈의 가치 저울·실행 목표 만들기 |
 | `2931f24` | 목표·노후 탭 분리(목표 → 노후 기본값), 노후 가로 입력·도장·색, 백테스트 끝 라벨 정리·▲▼·보유 지도·휴대폰 조건 카드·몬테카를로, 국내 시세 정리 |
 | `09f1a1f` | 리포트 탭, 내 자산 맨 왼쪽, 대안 그래프 비교, 노후 판정 도장·자산 표 설명·기록 칩 |
+| (실적) | 실적(펀더멘털) 순위 기준·조건, SEC 실적 DB와 증분 수집, 문장 해석 |
 
 그 사이의 'stock: 시세 갱신 …'은 봇 커밋이다.

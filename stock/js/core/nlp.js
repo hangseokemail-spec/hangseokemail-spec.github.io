@@ -30,6 +30,13 @@ const INDEX_LIKE = new Set(['SPY', 'VOO', 'IVV', 'VTI', 'QQQ', 'QQQM', 'DIA', 'I
 
 const KNUM = { 한: 1, 하나: 1, 일: 1, 두: 2, 둘: 2, 이: 2, 세: 3, 셋: 3, 삼: 3, 네: 4, 넷: 4, 사: 4, 다섯: 5, 오: 5, 여섯: 6, 육: 6, 일곱: 7, 칠: 7, 여덟: 8, 팔: 8, 아홉: 9, 구: 9, 열: 10, 십: 10 };
 
+// 실적 지표 말(순서 중요: '영업이익률'을 '영업이익 성장'보다 먼저)
+const FUND_WORDS = [
+  [/영업\s*이익\s*률/, 'opm'], [/순\s*이익\s*률/, 'npm'],
+  [/(?:eps|주당\s*순?\s*이익)\s*(?:성장|증가)\s*률?/, 'eps'], [/영업\s*이익\s*(?:성장|증가)\s*률?/, 'oi'],
+  [/순\s*이익\s*(?:성장|증가)\s*률?/, 'ni'], [/매출\s*액?\s*(?:성장|증가)\s*률?/, 'rev'],
+];
+
 export function defaultBtState() {
   return {
     period: { preset: '10y', start: null, end: null },
@@ -214,7 +221,7 @@ export function parseTiming(s, isKR) {
 }
 
 // ---- 반영하지 못했을 수 있는 말(간단 점검)
-const KNOWN = /^(최근|지난|동안|기간|부터|까지|년|개월|달|매달|매월|매년|분기|반기|말일|말일날|말|월말|연말|리밸런싱|리밸|비중|같은|동일|똑같이|균등|시총|시가총액|모멘텀|수익률|상승률|변동성|낮은|높은|좋은|많이|오른|상위|하위|위|등|개|종목|주식|etf|채권|현금|금|미국|국내|한국|코스피|코스닥|나스닥|대형주|중에서|중|골라서|고르|골라|담|담아|사|사서|사고|팔|팔고|매수|매도|투자|투자하면|하면|했을|때|경우|결과|백테스트|보여|보여줘|알려줘|해줘|해|줘|하고|하는|걸로|으로|로|씩|원|만원|달러|적립|인출|비교|대비|벤치마크|이랑|랑|와|과|하고|및|또|그리고|좀|이렇게|정도|약|만|빼고|제외|말고|레버리지|인버스|기준|원화|달러로|배당|재투자|수수료|비용|거래비용|한번|번|1달에|한달에|한|가장|제일|각|마다|이하|이상|아래|위로|넘으면|빠지면|떨어지면|하락|고점|이동평균|일선|개월선|데드크로스|골든크로스|rsi|vix|피신|쉬기|단기채|국채|장기채|트레일링|스톱|볼린저|macd|절대|듀얼|상대|되돌리기|맞추기|교체|바꾸|바꿔|다시|처음|시작|금액|원으로|기준으로|월|일|주|이|그|저|것|거|수|등등|포트폴리오|전략|규칙|조건|어떻게|얼마|몇|년간|팔기|사기|쉬기|추가|낮으면|높으면|넘으면|이상에서|이하에서|수익|교체하면|느낌|대해|대한|위해|하나|둘|셋|모두|전부|각각|매일|확인|판단|시점|이후|이전|동안만|정도로|높은것|낮은것)$/i;
+const KNOWN = /^(매출|매출액|성장률|성장|증가율|영업이익|영업이익률|순이익|순이익률|이익률|eps|EPS|qoq|QoQ|yoy|YoY|전분기|직전|대비|실적|미국주식|국내주식|최근|지난|동안|기간|부터|까지|년|개월|달|매달|매월|매년|분기|반기|말일|말일날|말|월말|연말|리밸런싱|리밸|비중|같은|동일|똑같이|균등|시총|시가총액|모멘텀|수익률|상승률|변동성|낮은|높은|좋은|많이|오른|상위|하위|위|등|개|종목|주식|etf|채권|현금|금|미국|국내|한국|코스피|코스닥|나스닥|대형주|중에서|중|골라서|고르|골라|담|담아|사|사서|사고|팔|팔고|매수|매도|투자|투자하면|하면|했을|때|경우|결과|백테스트|보여|보여줘|알려줘|해줘|해|줘|하고|하는|걸로|으로|로|씩|원|만원|달러|적립|인출|비교|대비|벤치마크|이랑|랑|와|과|하고|및|또|그리고|좀|이렇게|정도|약|만|빼고|제외|말고|레버리지|인버스|기준|원화|달러로|배당|재투자|수수료|비용|거래비용|한번|번|1달에|한달에|한|가장|제일|각|마다|이하|이상|아래|위로|넘으면|빠지면|떨어지면|하락|고점|이동평균|일선|개월선|데드크로스|골든크로스|rsi|vix|피신|쉬기|단기채|국채|장기채|트레일링|스톱|볼린저|macd|절대|듀얼|상대|되돌리기|맞추기|교체|바꾸|바꿔|다시|처음|시작|금액|원으로|기준으로|월|일|주|이|그|저|것|거|수|등등|포트폴리오|전략|규칙|조건|어떻게|얼마|몇|년간|팔기|사기|쉬기|추가|낮으면|높으면|넘으면|이상에서|이하에서|수익|교체하면|느낌|대해|대한|위해|하나|둘|셋|모두|전부|각각|매일|확인|판단|시점|이후|이전|동안만|정도로|높은것|낮은것)$/i;
 const ENDINGS = /(하면|하고|해서|하는|했을|하기|해줘|해주세요|하자|합니다|해요|할때|할|한|함|됨|되는|되면|됐을|이면|으면|면|은|는|이|가|을|를|에|에서|의|도|만|으로|로|와|과|랑|이랑|까지|부터|보다|처럼|마다|것|거|걸|게|기|간|날|요|죠|지)$/;
 function isKnownWord(w0) {
   let w = w0.toLowerCase();
@@ -324,15 +331,31 @@ export function parseCommand(text, prev = null) {
       const isSig = /^\s*(?:가|이|의)(?=\s)/.test(after) || /^\s*(?:가|이|의)?\s*(?:고점|rsi|vix|이동\s*평균|\d+\s*(?:일|개월)\s*(?:이동)?\s*(?:평균)?\s*선|\d+\s*(?:개월|달)\s*수익률|수익률|데드|골든)/i.test(after);
       if (isSig) sigIdx.push(i);
     }
-    const hasRankWord = /(시총|시가총액|모멘텀|수익률\s*(상위|높은)|변동성\s*(낮은|하위))/.test(s);
+    const hasRankWord = /(시총|시가총액|모멘텀|수익률\s*(상위|높은)|변동성\s*(낮은|하위)|성장률|이익률)/.test(s);
     // '…면 현금(으로)', '채권으로 피신' 같은 일반어는 담을 자산이 아니라 피신처
     for (let i = generic.length - 1; i >= 0; i--) { const g = generic[i]; const before = s.slice(Math.max(0, g.idx - 4), g.idx), after = s.slice(g.idx + g.len, g.idx + g.len + 6); if (['현금', '채권'].includes(g.word) && (/면\s*$/.test(before) || /^\s*(으로|로|에)/.test(after))) generic.splice(i, 1); }
     if (sigIdx.length && (assets.length > sigIdx.length || hasRankWord)) for (const i of sigIdx) assets.splice(i, 1);
   }
   // ---- 순위 전략 감지
-  const rankMetric = /(시총|시가총액|대장주|덩치)/.test(s) ? 'mcap'
+  // 실적 지표: '매출 성장률 상위', 'EPS 성장률(QoQ)', '영업이익률 20% 이상' 등
+  const fundHits = [];
+  for (const [re, key] of FUND_WORDS) {
+    const g = new RegExp(re.source, 'gi');
+    let mm;
+    while ((mm = g.exec(s))) {
+      if (fundHits.some((h) => mm.index >= h.idx && mm.index < h.idx + h.len)) continue;
+      const tail = s.slice(mm.index + mm[0].length, mm.index + mm[0].length + 24);
+      const per = ['opm', 'npm'].includes(key) ? '' : /^[^,.]{0,10}?(qoq|전\s*분기|직전\s*분기|분기\s*대비)/i.test(tail) ? '_qoq' : '_yoy';
+      const th = tail.match(/^\s*(?:\([^)]*\)\s*)?(?:(?:yoy|qoq)\s*)?(?:이|가|은|는)?\s*(\d+(?:\.\d+)?)\s*%\s*(?:이상|넘는|넘은|초과|보다\s*높)/i);
+      fundHits.push({ idx: mm.index, len: mm[0].length, key: key + per, min: th ? +th[1] : null });
+    }
+  }
+  const priceMetric = /(시총|시가총액|대장주|덩치)/.test(s) ? 'mcap'
     : /(모멘텀|많이\s*오른|수익률\s*(상위|높은|좋은)|상승률\s*상위|12-1)/.test(s) ? 'mom'
       : /(변동성\s*(낮은|작은|하위)|저변동|덜\s*흔들|안정적인)/.test(s) ? 'lowvol' : null;
+  const fundFilter = fundHits.find((h) => h.min != null) || null;
+  const fundRank = fundHits.find((h) => h.min == null) || (!priceMetric ? fundFilter : null);
+  const rankMetric = priceMetric || (fundRank ? `f:${fundRank.key}` : null);
   const rankN = (() => {
     let r;
     if ((r = s.match(/(\d+)\s*[~\-–]\s*(\d+)\s*(?:등|위)/))) return [+r[1], +r[2]];
@@ -353,6 +376,7 @@ export function parseCommand(text, prev = null) {
     P.kind = 'rank';
     said.add('rank');
     P.rank.metric = rankMetric;
+    if (fundFilter) { P.rank.ff = { key: fundFilter.key, min: fundFilter.min }; said.add('rank'); }
     P.rank.group = (mKR && !mUS) ? (mETF ? 'KR_ETF' : 'KR_STOCK') : (mETF ? 'US_ETF' : 'US_STOCK');
     if (!mKR && !mUS) defaulted.push('market');
     if (rankN) { P.rank.from = rankN[0]; P.rank.top = rankN[1]; } else { P.rank.from = 1; P.rank.top = 5; defaulted.push('topN'); }
