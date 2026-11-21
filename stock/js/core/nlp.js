@@ -242,6 +242,24 @@ function leftoverWords(s, mask) {
   return [...new Set(out)];
 }
 
+// '나스닥이랑 코스피200이랑 비교' → 비교 바로 앞에서부터 거꾸로, 지수 이름만으로 된 덩어리를 모음 → {words, start, end}
+const IDXW = '(코스피\\s*200|코스피|코스닥\\s*150|코스닥|S&P\\s*500|에스앤피|나스닥\\s*100|나스닥|다우|SPY|QQQ|KODEX\\s*200|VT|전세계)';
+function comparisonTargets(s) {
+  const m = s.match(/([^,.?!]{0,40}?)(?:와|과|랑|이랑|하고)?\s*(?:대비|비교|보다)/);
+  if (!m) return { words: [], start: -1, end: -1 };
+  const seg = m[1], segStart = m.index;
+  const toks = seg.split(/\s*(?:이랑|랑|와|과|하고|및|그리고|,)\s+|\s*(?:이랑|랑|하고)\s*$/).map((x) => x.trim()).filter(Boolean);
+  const words = [];
+  let firstPos = -1;
+  for (let i = toks.length - 1; i >= 0; i--) {
+    const t = toks[i].replace(/(이랑|랑|와|과|하고)$/, '').trim();
+    if (new RegExp(`^${IDXW}$`, 'i').test(t)) { words.unshift(t.toLowerCase()); firstPos = seg.lastIndexOf(t); continue; }
+    if (i === toks.length - 1) { const m2 = t.match(new RegExp(`\\s${IDXW}$`, 'i')); if (m2) { words.unshift(m2[1].toLowerCase()); firstPos = seg.lastIndexOf(m2[1]); } }
+    break;
+  }
+  return { words, start: firstPos >= 0 ? segStart + firstPos : -1, end: segStart + m[0].length };
+}
+
 /**
  * 해석: 문장 → {state, report}
  * prev: 지금 상태(고치는 문장 '분기로 바꿔줘'를 덮어쓸 때)
@@ -285,6 +303,15 @@ export function parseCommand(text, prev = null) {
     markRange(i, m[2].length);
   }
 
+  // '…랑 비교' 꼬리의 지수 이름은 담을 종목이 아니라 비교 대상
+  const cmpT = comparisonTargets(s);
+  if (cmpT.words.length && cmpT.start >= 0) {
+    const inTail = (a) => a.idx >= cmpT.start && a.idx < cmpT.end;
+    const rest = assets.filter((a) => !inTail(a)).length + generic.length + presetItems.length;
+    const rankWords = /(시총|시가총액|대장주|모멘텀|많이\s*오른|수익률\s*(상위|높은|좋은)|상승률\s*상위|변동성\s*(낮은|작은|하위)|저변동)/.test(s);
+    if (rest || rankWords) { for (let i = assets.length - 1; i >= 0; i--) if (inTail(assets[i])) assets.splice(i, 1); }
+    else cmpT.words = []; // 'SPY랑 QQQ 비교'처럼 비교 대상뿐이면 둘을 포트폴리오로
+  }
   // 타이밍 문구 안의 종목(신호 대상·피신처)은 담을 종목에서 뺌: 'SPY가 15% 빠지면', '단기채보다 낮으면 국채로'
   const tmPre = parseTiming(s, false);
   if (tmPre) {
@@ -439,17 +466,7 @@ export function parseCommand(text, prev = null) {
   delete st._curSaid;
 
   // ---- 벤치마크
-  // '나스닥이랑 코스피200이랑 비교' → 비교 바로 앞에서부터 거꾸로, 지수 이름만으로 된 덩어리를 모음
-  const cmpSeg = (s.match(/([^,.?!]{0,40})(?:와|과|랑|이랑|하고)?\s*(?:대비|비교|보다)/) || [])[1] || '';
-  const IDXW = '(코스피\\s*200|코스피|코스닥\\s*150|코스닥|S&P\\s*500|에스앤피|나스닥\\s*100|나스닥|다우|SPY|QQQ|KODEX\\s*200|VT|전세계)';
-  const toks = cmpSeg.split(/\s*(?:이랑|랑|와|과|하고|및|그리고|,)\s+|\s*(?:이랑|랑|하고)\s*$/).map((x) => x.trim()).filter(Boolean);
-  const cmpWords = [];
-  for (let i = toks.length - 1; i >= 0; i--) {
-    const t = toks[i].replace(/(이랑|랑|와|과|하고)$/, '').trim();
-    if (new RegExp(`^${IDXW}$`, 'i').test(t)) { cmpWords.unshift(t.toLowerCase()); continue; }
-    if (i === toks.length - 1) { const m2 = t.match(new RegExp(`\\s${IDXW}$`, 'i')); if (m2) cmpWords.unshift(m2[1].toLowerCase()); }
-    break;
-  }
+  const cmpWords = cmpT.words;
   if (cmpWords.length) {
     const toKey = (w) => (/코스피|kodex/.test(w) ? '069500' : /코스닥/.test(w) ? '229200' : /나스닥|qqq/.test(w) ? 'QQQ' : /다우/.test(w) ? 'DIA' : /vt|전세계/.test(w) ? 'VT' : 'SPY');
     st.benchmarks = [...new Set(cmpWords.map(toKey))].slice(0, 6);
