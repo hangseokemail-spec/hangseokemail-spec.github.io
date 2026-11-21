@@ -1,16 +1,1 @@
-{
- "updated": "2026-11-21T08:32:21Z",
- "fetched": 884,
- "incremental": 884,
- "full": 0,
- "failed": [],
- "files_changed": 12,
- "tr_check_worst": [],
- "fund": {
-  "US_STOCK": {
-   "updated": "2026-11-21T08:32:21Z",
-   "tickers": 159,
-   "nodata": 6
-  }
- }
-}
+{"updated":"2026-11-21T08:39:00Z","fetched":884,"incremental":884,"full":0,"failed":[],"files_changed":0,"tr_check_worst":[]}
